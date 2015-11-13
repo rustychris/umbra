@@ -32,6 +32,7 @@ from umbra_dockwidget import UmbraDockWidget
 import os.path
 
 import umbra_layer
+import umbra_editor_tool
 
 class Umbra:
     """QGIS Plugin Implementation."""
@@ -178,6 +179,9 @@ class Umbra:
             text=self.tr(u'Umbra'),
             callback=self.run,
             parent=self.iface.mainWindow())
+
+        self.editor_tool = umbra_editor_tool.UmbraEditorTool(self.iface) #,self.toolBar)
+
 
     #--------------------------------------------------------------------------
 

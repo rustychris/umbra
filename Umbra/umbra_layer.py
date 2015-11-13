@@ -111,16 +111,6 @@ class UmbraLayer(QgsPluginLayer):
     def draw(self, rendererContext):
         print "Call to draw"
         
-        # painter=rendererContext.painter()
-        # painter.save()
-        # painter.setPen( QtGui.QColor("red") )
-        # pen = painter.pen()
-        # pen.setWidth(3)
-        # painter.setPen(pen)
-
-        # painter.drawLine(50,100,150,200)
-        # painter.restore()
-
         print "About to draw_edges"
         try:
             self.draw_edges(rendererContext)
@@ -133,6 +123,7 @@ class UmbraLayer(QgsPluginLayer):
         self.repaint_freezes = 0
         print "End of Call to draw"
         # was working okay with just drawLine, and returning false...
+        # working okay with drawing the grid and returning false
         return False # ?True
     
     # def on_delete_edge(self,j):

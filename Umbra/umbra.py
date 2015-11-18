@@ -20,6 +20,7 @@
  *                                                                         *
  ***************************************************************************/
 """
+
 from PyQt4.QtCore import QSettings, QTranslator, qVersion, QCoreApplication, Qt
 from PyQt4.QtGui import QAction, QIcon
 # Initialize Qt resources from file resources.py
@@ -244,6 +245,10 @@ class Umbra:
 
         print "Adding layer"
         QgsPluginLayerRegistry.instance().addPluginLayerType(umbra_layer.UmbraPluginLayerType(self.iface))
+        print "Added plugin layer type"
         my_layer = umbra_layer.UmbraLayer(iface=self.iface)
-        QgsMapLayerRegistry.instance().addMapLayer(my_layer)
+        print "Created layer"
+        self.reg=QgsMapLayerRegistry.instance()
+        print "Got registry"
+        self.reg.addMapLayer(my_layer)
         print "Done adding layer"

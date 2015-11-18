@@ -106,7 +106,12 @@ class UmbraEditorTool(QgsMapTool):
         # maybe if we import the class itself??
 
         # or that it's running some stale code after a reload.
-        enabled = isinstance(clayer,UmbraLayer)
+        try:
+            enabled = (UmbraLayer is not None) and isinstance(clayer,UmbraLayer)
+        except TypeError:
+            print "What - UmbraLayer is",UmbraLayer
+            enabled=False
+
         print "Enabled is now set to",enabled
         self.action_coverage_editor.setEnabled( enabled )
         if enabled:
@@ -245,7 +250,7 @@ class UmbraEditorTool(QgsMapTool):
         # Process whatever is in state
         layer = self.canvas.currentLayer()
         grid = layer.grid
-        t = time.time()
+
         layer.freeze_repaints()
         
         if len(self.state) == 2:
@@ -259,13 +264,13 @@ class UmbraEditorTool(QgsMapTool):
                     A = kwargs['p1']
                 else:
                     kwargs['n1'] = self.state[0][2]
-                    A = grid.points[kwargs['n1']]
+                    A = grid.nodes['x'][kwargs['n1']]
                 if self.state[1][1] == 'point':
                     kwargs['p2'] = np.array( self.state[1][2] )
                     B = kwargs['p2']
                 else:
                     kwargs['n2'] = self.state[1][2]
-                    B = grid.points[kwargs['n2']]
+                    B = grid.nodes['x'][kwargs['n2']]
 
                 # make sure that the two points aren't the same - that causes
                 # a seg fault in check_line_is_clear
@@ -282,10 +287,7 @@ class UmbraEditorTool(QgsMapTool):
                     for j in [0,1]:
                         if self.state[j][1] == 'point':
                             pnt = np.array( self.state[j][2] )
-                            if isinstance( grid, paver.Paving ):
-                                n = grid.add_node(pnt,paver.FREE)
-                            else:
-                                n = grid.add_node(pnt)
+                            n = grid.add_node(x=pnt)
                             nodes.append( n )
                         elif self.state[j][1] == 'node':
                             nodes.append( self.state[j][2] )
@@ -349,8 +351,6 @@ class UmbraEditorTool(QgsMapTool):
         # 
         self.state = []
         layer.thaw_repaints()
-        print "Time to handle release: ",time.time() - t
-        
 
     def isZoomTool(self):
         return False

@@ -1,0 +1,12 @@
+Crashing when adding the MapLayer.
+
+Seg fault is down in QgsLegendLayer::updateIcon(), according
+to gdb.
+
+Upgrading to Lyon, 2.12, and it runs just fine.
+
+It does show the editor tool pointer.
+
+Clicking prints "Add", "Add" and gives a python error - stale calls to time.time()
+
+

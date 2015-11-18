@@ -27,7 +27,10 @@ class UmbraLayer(QgsPluginLayer):
         self.setValid(True)
 
     def load_grid(self):
-        tg=trigrid.TriGrid(sms_fname='/Users/rusty/research/meshing/delta_1.grd')        
+        # for development, load sample data:
+        tg=trigrid.TriGrid(suntans_path=os.path.join( os.path.dirname(__file__),
+                                                      "sample_data/sfbay" ) )
+        #sms_fname='/Users/rusty/research/meshing/delta_1.grd')        
         self.grid=unstructured_grid.UnstructuredGrid.from_trigrid(tg)
 
     def prepare_grid(self):
@@ -41,7 +44,7 @@ class UmbraLayer(QgsPluginLayer):
         self.setCrs(self.coordRS)
     
         # try setting extent field:
-        # DBG self.setExtent(self.extent())
+        self.setExtent(self.extent())
     
         # # wire up some callbacks to the grid model
         # self.grid.listen('delete_edge',self.on_delete_edge)
@@ -103,15 +106,15 @@ class UmbraLayer(QgsPluginLayer):
             self.qlines[j] = QLineF(segment[0,0],segment[0,1],
                                     segment[1,0],segment[1,1])
     
-    #def extent(self):
-    #    xmin,xmax,ymin,ymax = self.grid.bounds()
-    #    print "extent() called on UmbraLayer"
-    #    return QgsRectangle(xmin,ymin,xmax,ymax)
+    def extent(self):
+        xmin,xmax,ymin,ymax = self.grid.bounds()
+        print "extent() called on UmbraLayer"
+        return QgsRectangle(xmin,ymin,xmax,ymax)
       
     def draw(self, rendererContext):
         print "Call to draw"
         
-        print "About to draw_edges"
+        # print "About to draw_edges"
         try:
             self.draw_edges(rendererContext)
         except Exception as exc:
@@ -173,7 +176,7 @@ class UmbraLayer(QgsPluginLayer):
         # not ready for index here
         # visible_nodes = self.grid.index.qsi.intersects(extent)
 
-        print "Call to render_nodes"
+        # print "Call to render_nodes"
 
         xform = painter.combinedTransform()
         dx = xform.m11()
@@ -181,7 +184,7 @@ class UmbraLayer(QgsPluginLayer):
         color = QtGui.QColor("green")
         dx = 2.0/dx
         dy = 2.0/dy
-        print "dx: %s  dy: %s "%(dx,dy)
+        # print "dx: %s  dy: %s "%(dx,dy)
         for n in self.visible_nodes():
             painter.fillRect( self.grid.nodes['x'][n,0]-dx,
                               self.grid.nodes['x'][n,1]-dy, 
@@ -227,7 +230,7 @@ class UmbraLayer(QgsPluginLayer):
     #         painter.scale(1,-1)
             
     def draw_edges(self,rendererContext,boundary_only=False):
-        print "Top of draw edges"
+        # print "Top of draw edges"
         painter = rendererContext.painter()
         painter.save()
 
@@ -244,7 +247,7 @@ class UmbraLayer(QgsPluginLayer):
         pix_bottomright = map2pixel.transform(extent.xMaximum(), extent.yMinimum())
         pix_bottomright = np.array( [pix_bottomright.x(), pix_bottomright.y()])
 
-        print "Middle of draw edges"
+        # print "Middle of draw edges"
         x0 = geo_topleft[0]
         mx = (pix_bottomright[0] - pix_topleft[0]) / (geo_bottomright[0] - geo_topleft[0])
         bx = pix_topleft[0]
@@ -256,7 +259,7 @@ class UmbraLayer(QgsPluginLayer):
         painter.translate(bx-mx*x0,by-my*y0)
         painter.scale(mx,my)
 
-        print "About to call render_edges"
+        # print "About to call render_edges"
         #-# draw features...
         self.render_edges(painter)
         # if self.paint_edgemarks:
@@ -265,14 +268,14 @@ class UmbraLayer(QgsPluginLayer):
         # if self.paint_edgeneighbors:
         #     self.render_edgeneighbors(painter,extent=extent)
         
-        print "About to call render_nodes"
+        #print "About to call render_nodes"
         #if self.paint_nodes:
         self.render_nodes(painter,extent=extent)
         
         painter.restore()
     
     def render_edges(self,painter):
-        print "Call to render_edges"
+        #print "Call to render_edges"
         painter.drawLines( self.qlines )
   
     def readXml(self, node):

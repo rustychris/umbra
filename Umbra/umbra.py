@@ -32,7 +32,11 @@ from qgis.core import QgsPluginLayerRegistry,QgsMapLayerRegistry
 from umbra_dockwidget import UmbraDockWidget
 import os.path
 
+import unstructured_grid
+reload(unstructured_grid)
+
 import umbra_layer
+reload(umbra_layer)
 import umbra_editor_tool
 
 class Umbra:
@@ -46,6 +50,7 @@ class Umbra:
             application at run time.
         :type iface: QgsInterface
         """
+        print "** Top of __init__"
         # Save reference to the QGIS interface
         self.iface = iface
 
@@ -206,15 +211,38 @@ class Umbra:
     def unload(self):
         """Removes the plugin menu item and icon from QGIS GUI."""
 
-        #print "** UNLOAD Umbra"
+        print "** UNLOAD Umbra"
 
-        for action in self.actions:
-            self.iface.removePluginMenu(
-                self.tr(u'&Umbra'),
-                action)
-            self.iface.removeToolBarIcon(action)
-        # remove the toolbar
-        del self.toolbar
+        try:
+            for action in self.actions:
+                self.iface.removePluginMenu(
+                    self.tr(u'&Umbra'),
+                    action)
+                self.iface.removeToolBarIcon(action)
+        except Exception as exc:
+            print "While removing toolbaricon"
+            print exc
+        
+        try:
+            # remove the toolbar
+            del self.toolbar
+        except AttributeError:
+            print "toolbar not set. ignoring."
+
+        try:
+            # remove any umbra layers
+            reg=QgsMapLayerRegistry.instance()
+            to_remove=[]
+            for k,v in reg.mapLayers().iteritems():
+                if isinstance(v,umbra_layer.UmbraLayer):
+                    print "Found an umbra layer"
+                    to_remove.append(k)
+            print "About to remove layers"
+            reg.removeMapLayers(to_remove)
+            print "Done removing layers"
+        except Exception as exc:
+            print "Trying to remove layers"
+            print exc
 
     #--------------------------------------------------------------------------
 

@@ -14,8 +14,6 @@ from qgis.gui import QgsMapTool
 # Copied / boilerplated from cadtools/singlesegmentfindertoolpy
 from umbra_layer import UmbraLayer
 
-print UmbraLayer
-
 import numpy as np
 # import dock_tools
 
@@ -94,18 +92,11 @@ class UmbraEditorTool(QgsMapTool):
         print "Tool deactivated"
 
     def handle_layer_changed(self):
-        """ set the tool to enabled if the new layer is a MemCoverage """
-        print "handle_layer_changed"
+        """ set the tool to enabled if the new layer is an UmbraLayer """
+
         clayer = self.canvas.currentLayer()
-        # not really sure how it's possible that this is sometimes None, but it has happened:
-        #if MemCoverageLayer is None:
-        #    enabled = False
-        #else:
 
-        # sometimes umbra_layer is None, even though it's just a module import.
-        # maybe if we import the class itself??
-
-        # or that it's running some stale code after a reload.
+        # occasionally happens, probaly related to stale code after a reload
         try:
             enabled = (UmbraLayer is not None) and isinstance(clayer,UmbraLayer)
         except TypeError:
@@ -119,7 +110,6 @@ class UmbraEditorTool(QgsMapTool):
         else:
             self.canvas.unsetMapTool(self)
 
-        
     def event_to_target(self,event,px_tolerance=None,target_type='node'):
         if px_tolerance is None:
             px_tolerance = self.px_tolerance
@@ -142,8 +132,10 @@ class UmbraEditorTool(QgsMapTool):
 
         if target_type == 'node':
             i = layer.find_closest_node([map_x,map_y])
+            print "Layer says closest node is ",i
             # how far away is it?
             px_dist = layer.distance_to_node([map_x,map_y],i) / pxscale
+            print "And pixel distance is ",px_dist
             result = ('node',i)
         elif target_type == 'cell':
             i = layer.find_closest_cell([map_x,map_y])
@@ -151,6 +143,7 @@ class UmbraEditorTool(QgsMapTool):
             px_dist = layer.distance_to_cell([map_x,map_y],i) / pxscale
             result = ('cell',i)
 
+        print "px_tolerance is ",px_tolerance
         if px_dist < px_tolerance:
             return result
         else:
@@ -186,7 +179,7 @@ class UmbraEditorTool(QgsMapTool):
         mods = event.modifiers()
         button = event.button()
 
-        if self.edit_mode == 'edgenode':
+        if self.edit_mode == 'edgenode': # for now the one and only.
             if button == self.rightbutton:
                 print "Delete"
                 cmd = 'del'
@@ -226,25 +219,20 @@ class UmbraEditorTool(QgsMapTool):
 
         if self.edit_mode == 'edgenode':
             if button == self.rightbutton:
-                print "Delete"
                 cmd = 'del'
             elif mods & self.shiftmod:
-                print "Move"
                 cmd = 'move'
             else:
-                print "Add"
                 cmd = 'add'
         elif self.edit_mode == 'cell_toggle':
-            print "Toggle"
             cmd = 'cell_toggle'
         elif self.edit_mode == 'optimize':
-            print "Optimize"
             # we always want a node for the target  -
             if button ==self.leftbutton and (mods & self.shiftmod):
                 cmd = 'repave'
             else:
                 cmd = 'relax'
-
+        print "Command: ",cmd
         self.state.append( (cmd,target_type,target_id) )
 
         # Process whatever is in state
@@ -254,80 +242,57 @@ class UmbraEditorTool(QgsMapTool):
         layer.freeze_repaints()
         
         if len(self.state) == 2:
+            print "mouse state:"
+            print self.state
+
             if self.state[0][0] == 'add' and self.state[1][0] == 'add':
                 nodes = []
 
-                # use live_dt to see if it's a safe line:
-                kwargs = {}
-                if self.state[0][1] == 'point':
-                    kwargs['p1'] = np.array( self.state[0][2] )
-                    A = kwargs['p1']
-                else:
-                    kwargs['n1'] = self.state[0][2]
-                    A = grid.nodes['x'][kwargs['n1']]
-                if self.state[1][1] == 'point':
-                    kwargs['p2'] = np.array( self.state[1][2] )
-                    B = kwargs['p2']
-                else:
-                    kwargs['n2'] = self.state[1][2]
-                    B = grid.nodes['x'][kwargs['n2']]
+                # this is where the old code checked to see if the line 
+                # is safe.
 
-                # make sure that the two points aren't the same - that causes
-                # a seg fault in check_line_is_clear
-                if all(A==B):
-                    print "Degenerate line.  Nice try, but no."
-                    conflicts = ['degen']
-                else:
-                    conflicts = grid.check_line_is_clear(**kwargs)
-                    
-                print "Conflicts for that line are", conflicts
-                if len(conflicts) > 0:
-                    print "LINE IS NOT SAFE"
-                else:
-                    for j in [0,1]:
-                        if self.state[j][1] == 'point':
-                            pnt = np.array( self.state[j][2] )
-                            n = grid.add_node(x=pnt)
-                            nodes.append( n )
-                        elif self.state[j][1] == 'node':
-                            nodes.append( self.state[j][2] )
-                        else:
-                            raise Exception,"How is it neither a point nor a node?"
-                    if nodes[0] == nodes[1]:
-                        print "That's the same node!"
-                        nodes = None
+                for j in [0,1]:
+                    if self.state[j][1] == 'point':
+                        pnt = np.array( self.state[j][2] )
+                        n = grid.add_node(x=pnt)
+                        nodes.append( n )
+                    elif self.state[j][1] == 'node':
+                        nodes.append( self.state[j][2] )
                     else:
-                        try:
-                            print "Checking on edge betwen %s and %s"%(nodes[0],nodes[1])
-                            j = grid.find_edge( nodes )
-                            print "That edge already exists"
-                            nodes = None
-                        except MemCoverageLayer.NoSuchEdgeError:
-                            pass
+                        raise Exception,"How is it neither a point nor a node?"
+                if nodes[0] == nodes[1]:
+                    print "That's the same node!"
+                    nodes = None
+                else:
+                    print "Checking on edge betwen %s and %s"%(nodes[0],nodes[1])
+                    j = grid.nodes_to_edge( *nodes )
+                    if j is not None:
+                        print "That edge already exists"
+                        nodes = None
 
-                    if nodes is not None:
-                        grid.add_edge(nodes[0],nodes[1])
+                if nodes is not None:
+                    grid.add_edge(nodes=nodes)
                     
             elif self.state[0][0] == 'del' and self.state[1][0] == 'del':
                 print "Two dels - great."
                 if self.state[0][1] == 'node' and self.state[1][1] == 'node':
                     if self.state[0][2] == self.state[1][2]:
                         print "Okay - will delete that node"
-                        grid.delete_node( self.state[0][2], remove_edges=True )
+                        grid.delete_node_cascade( self.state[0][2] )
                     else:
                         print "And both are nodes.  Will delete that edge if it exists"
-                        try:
-                            j = grid.find_edge( (self.state[0][2],self.state[1][2]) )
-                            grid.delete_edge(j)
-                        except MemCoverageLayer.NoSuchEdgeError:
-                            pass
+                        j = grid.nodes_to_edge( self.state[0][2],self.state[1][2] )
+                        if j:
+                            grid.delete_edge_cascade(j)
+                        else:
+                            print "Didn't find that edge"
                 else:
                     print "Two deletes, but not both nodes.  Forget it"
             elif self.state[0][0] == 'move' and self.state[0][1] == 'node':
                 if self.state[1][1] == 'node':
                     print "Not ready to move one node onto another node"
                 elif self.state[1][1] == 'point':
-                    grid.move_node(self.state[0][2],np.array(self.state[1][2]))
+                    grid.modify_node(self.state[0][2],x=np.array(self.state[1][2]))
             elif self.state[0][0] == 'cell_toggle' and self.state[0][1] == 'point':
                 print "Would be toggle cell at point ",self.state[0][2]
                 grid.toggle_cell(p=self.state[0][2])

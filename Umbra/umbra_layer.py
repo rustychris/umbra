@@ -7,7 +7,7 @@ import trigrid
 import utils
 import numpy as np
 
-from PyQt4.QtCore import QLineF
+from PyQt4.QtCore import QLineF, SIGNAL
 import PyQt4.QtGui as QtGui
 #from PyQt4.QtWebKit import *
 
@@ -46,10 +46,12 @@ class UmbraLayer(QgsPluginLayer):
         # try setting extent field:
         self.setExtent(self.extent())
     
-        # # wire up some callbacks to the grid model
+        # wire up some callbacks to the grid model
         # self.grid.listen('delete_edge',self.on_delete_edge)
-        # self.grid.listen('create_edge',self.on_create_edge)
-        # self.grid.listen('update_edge',self.on_update_edge)
+        self.grid.subscribe_after('add_edge',self.on_add_edge)
+        self.grid.subscribe_after('modify_node',self.on_modify_node)
+        self.grid.subscribe_after('delete_edge',self.on_delete_edge)
+        self.grid.subscribe_after('delete_node',self.on_delete_node)
   
     # 0: no queued repaints, and repaints will be handled synchronously
     repaint_freezes = 0
@@ -81,6 +83,7 @@ class UmbraLayer(QgsPluginLayer):
     
     def find_closest_node(self,xy):
         # xy: [x,y]
+        print "Finding closest node to ",xy
         return self.grid.select_nodes_nearest(xy)
     
     def find_closest_cell(self,xy):
@@ -129,27 +132,33 @@ class UmbraLayer(QgsPluginLayer):
         # working okay with drawing the grid and returning false
         return False # ?True
     
-    # def on_delete_edge(self,j):
-    #     # self.prepare_lines()
-    #     self.qlines[j] = self.null_line
-    #     self.myRepaint()
+    def on_delete_edge(self,grid,func_name,j,**kwargs):
+        self.qlines[j] = self.null_line
+        self.my_repaint()
+    def on_delete_node(self,grid,func_name,n,**kwargs):
+        self.my_repaint()
       
-    # def on_create_edge(self,j):
-    #     print "Got word of a created edge"
-    #     # For now, we just recreate all of the edges
-    #     # self.prepare_lines()
-    #     if len(self.qlines) != j:
-    #         print "ERROR: Length of qlines is not right..."
-    #         return
-    #     self.qlines.append(None)
-    #     self.on_update_edge(j)
-        
-    # def on_update_edge(self,j):
-    #     edge = self.grid.edges[j,:2]
-    #     segment = self.grid.points[edge]
-    #     self.qlines[j] = QLineF(segment[0,0],segment[0,1],
-    #                             segment[1,0],segment[1,1])
-    #     self.myRepaint()
+    def on_add_edge(self,grid,func_name,**kws):
+        print "Got word of a new edge"
+        j=kws['return_value']
+        # For now, we just recreate all of the edges
+        if len(self.qlines) != j:
+            print "ERROR: Length of qlines is not right..."
+            return
+        self.qlines.append(None)
+        self.update_edge(j)
+
+    def on_modify_node(self,grid,func_name,*args,**kwargs):
+        n=args[0]
+        if 'x' not in kwargs:
+            return # ignore attribute changes for now.
+        map(self.update_edge,grid.node_to_edges(n))
+        self.my_repaint()
+    def update_edge(self,j):
+        segment = self.grid.nodes['x'][self.grid.edges['nodes'][j],:]
+        self.qlines[j] = QLineF(segment[0,0],segment[0,1],
+                                segment[1,0],segment[1,1])
+        self.my_repaint()
 
     # def render_edgemarks(self,painter,mx):
     #     """ draw edges with nonzero markers in a different color:

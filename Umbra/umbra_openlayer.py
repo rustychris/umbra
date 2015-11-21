@@ -20,11 +20,6 @@
  ***************************************************************************/
 """
 
-# HERE: 
-# this had been working sporadically, but then things weren't getting reloaded
-# properly, hard to tell which edit had what effect.  after restarting qgis,
-# no longer responds to browseButton or buttonBox.
-
 import os
 
 default_sun_grid=os.path.join( os.path.dirname(__file__),
@@ -55,7 +50,8 @@ class UmbraOpenLayer(base_class, FORM_CLASS):
         self.lineEdit.setText(default_sun_grid)
 
         self.browseButton.clicked.connect(self.on_browseButton_clicked)
-        self.buttonBox.clicked.connect(self.on_buttonBox_clicked)
+        self.buttonBox.accepted.connect(self.on_ok_clicked)
+        self.buttonBox.rejected.connect(self.on_cancel_clicked)
         print "Connected the signals..."
 
     def closeEvent(self, event):
@@ -64,16 +60,17 @@ class UmbraOpenLayer(base_class, FORM_CLASS):
         event.accept()
 
     def on_browseButton_clicked(self,*a,**k):
-        print "Got browse"
         filename=QtGui.QFileDialog.getOpenFileName(self, 'Open file', 
                                                    '/home')
         print "Filename ",filename
         if filename is not None:
             self.lineEdit.setText( filename )
         return True #?
-    def on_buttonBox_clicked(self,*a,**k):
-        print "Hi!"
-        print a[0]
-        print a[0].text
+    def on_ok_clicked(self):
+        print "OK!"
+        print a
+    def on_cancel_clicked(self):
+        print "Cancel!"
+        print a
 
 

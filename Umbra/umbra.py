@@ -32,12 +32,17 @@ from qgis.core import QgsPluginLayerRegistry,QgsMapLayerRegistry
 from umbra_dockwidget import UmbraDockWidget
 import os.path
 
+import umbra_openlayer
+reload(umbra_openlayer)
+
 import unstructured_grid
 reload(unstructured_grid)
 
 import umbra_layer
 reload(umbra_layer)
+
 import umbra_editor_tool
+reload(umbra_editor_tool)
 
 class Umbra:
     """QGIS Plugin Implementation."""
@@ -100,17 +105,16 @@ class Umbra:
         return QCoreApplication.translate('Umbra', message)
 
 
-    def add_action(
-        self,
-        icon_path,
-        text,
-        callback,
-        enabled_flag=True,
-        add_to_menu=True,
-        add_to_toolbar=True,
-        status_tip=None,
-        whats_this=None,
-        parent=None):
+    def add_action(self,
+                   icon_path,
+                   text,
+                   callback,
+                   enabled_flag=True,
+                   add_to_menu=True,
+                   add_to_toolbar=True,
+                   status_tip=None,
+                   whats_this=None,
+                   parent=None):
         """Add a toolbar icon to the toolbar.
 
         :param icon_path: Path to the icon for this action. Can be a resource
@@ -186,8 +190,24 @@ class Umbra:
             callback=self.run,
             parent=self.iface.mainWindow())
 
-        self.editor_tool = umbra_editor_tool.UmbraEditorTool(self.iface) #,self.toolBar)
+        self.editor_tool = umbra_editor_tool.UmbraEditorTool(self.iface)
 
+        self.add_action(icon_path,text='Open Umbra layer',
+                        callback=self.open_layer,
+                        parent=self.iface.mainWindow(),
+                        add_to_menu=True,
+                        add_to_toolbar=False)
+
+        #action_open = QAction(QIcon(":/plugins/newmemorylayer/layer-memory-create.png"), 
+        #                           QCoreApplication.translate("NewMemoryLayer","New Memory Layer..."), 
+        #                           self.iface.mainWindow())
+
+        # add menu entry to load a grid
+        # cribbed from newmemorylayer.py plugin
+        #try:
+        #    self.iface.newLayerMenu().addAction(self.action)  # API >= 1.9
+        #except:
+        #    self.iface.addPluginToMenu("New Memory Layer", self.action)
 
     #--------------------------------------------------------------------------
 
@@ -246,11 +266,7 @@ class Umbra:
 
     #--------------------------------------------------------------------------
 
-    def run(self):
-        """Run method that loads and starts the plugin"""
-
-        print "** Call to run"
-
+    def activate(self):
         if not self.pluginIsActive:
             self.pluginIsActive = True
 
@@ -271,6 +287,20 @@ class Umbra:
             self.dockwidget.show()
             print "Done starting"
 
+    def open_layer(self):
+        self.activate()
+
+        print "Would be asking for a path"
+        dialog=umbra_openlayer.UmbraOpenLayer(parent=self.iface.mainWindow())
+        dialog.exec_() # 
+        print "Dialog was exec'd..."
+
+    def run(self):
+        """Run method that loads and starts the plugin"""
+
+        print "** Call to run"
+
+        self.activate()
         print "Adding layer"
         QgsPluginLayerRegistry.instance().addPluginLayerType(umbra_layer.UmbraPluginLayerType(self.iface))
         print "Added plugin layer type"

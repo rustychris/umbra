@@ -12,7 +12,7 @@ from PyQt4.QtCore import *
 from qgis.gui import QgsMapTool
 
 # Copied / boilerplated from cadtools/singlesegmentfindertoolpy
-from umbra_layer import UmbraLayer
+import umbra_layer 
 
 import numpy as np
 # import dock_tools
@@ -96,11 +96,12 @@ class UmbraEditorTool(QgsMapTool):
 
         clayer = self.canvas.currentLayer()
 
-        # occasionally happens, probaly related to stale code after a reload
+        # occasionally happens, probably related to stale code after a reload
         try:
-            enabled = (UmbraLayer is not None) and isinstance(clayer,UmbraLayer)
+            # was isinstance(clayer,UmbraLayer)
+            enabled = (umbra_layer is not None) and umbra_layer.is_umbra_layer(clayer)
         except TypeError:
-            print "What - UmbraLayer is",UmbraLayer
+            print "What - umbra_layer is",umbra_layer
             enabled=False
 
         print "Enabled is now set to",enabled

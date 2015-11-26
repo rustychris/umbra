@@ -39,17 +39,18 @@ LOCALES =
 SOURCES = \
 	__init__.py \
 	umbra.py umbra_dockwidget.py umbra_layer.py umbra_editor_tool.py \
-	umbra_openlayer.py
+	umbra_openlayer.py umbra_savelayer.py umbra_common.py
 
 PLUGINNAME = Umbra
 
 PY_FILES = \
 	__init__.py \
 	umbra.py umbra_dockwidget.py umbra_layer.py umbra_editor_tool.py \
-	umbra_openlayer.py
+	umbra_openlayer.py umbra_savelayer.py umbra_common.py
 
 UI_FILES = umbra_dockwidget_base.ui \
-           umbra_openlayer_base.ui
+           umbra_openlayer_base.ui \
+           umbra_savelayer_base.ui
 
 EXTRAS = metadata.txt icon.png sample_data
 

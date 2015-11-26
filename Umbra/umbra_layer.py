@@ -9,30 +9,45 @@ import numpy as np
 
 from PyQt4.QtCore import QLineF, SIGNAL
 import PyQt4.QtGui as QtGui
-#from PyQt4.QtWebKit import *
 
 from qgis.core import *
 
 class UmbraLayer(QgsPluginLayer):
     LAYER_TYPE="umbra"
 
-    def __init__(self,iface=None):
-        global the_layer
-        the_layer = self
+    def __init__(self,iface=None,format=None,path=None):
+        self.repaint_freezes = 0
+        self.repaint_queued = False
+
         self.grid=None
         self.iface=iface
-        super(UmbraLayer,self).__init__(self.LAYER_TYPE, "Umbra plugin layer")
-        self.load_grid()
+        if path is not None:
+            name=path
+        else:
+            name="Umbra layer"
+
+        super(UmbraLayer,self).__init__(self.LAYER_TYPE,name)
+        self.load_grid(format=format,path=path)
         self.prepare_grid()
         self.setValid(True)
 
-    def load_grid(self):
-        # for development, load sample data:
-        tg=trigrid.TriGrid(suntans_path=os.path.join( os.path.dirname(__file__),
-                                                      "sample_data/sfbay" ) )
-        #sms_fname='/Users/rusty/research/meshing/delta_1.grd')        
-        self.grid=unstructured_grid.UnstructuredGrid.from_trigrid(tg)
-
+    def load_grid(self,format=None,path=None):
+        if path is None:
+            # for development, load sample data:
+            suntans_path=os.path.join( os.path.dirname(__file__),
+                                       "sample_data/sfbay" )
+            # tg=trigrid.TriGrid( )
+            #sms_fname='/Users/rusty/research/meshing/delta_1.grd')        
+            self.grid=unstructured_grid.SuntansGrid(suntans_path)
+        else:
+            if format=='SUNTANS':
+                # tg=trigrid.TriGrid(suntans_path=path)
+                self.grid=unstructured_grid.SuntansGrid(path)
+            elif format=='pickle':
+                self.grid=unstructured_grid.UnstructuredGrid.from_pickle(path)
+            else:
+                raise Exception("Need to add other grid types!")
+            
     def prepare_grid(self):
         """ after loading grid, set up any callbacks, cached data, bounds, etc.
         """
@@ -54,9 +69,8 @@ class UmbraLayer(QgsPluginLayer):
         self.grid.subscribe_after('delete_node',self.on_delete_node)
   
     # 0: no queued repaints, and repaints will be handled synchronously
-    repaint_freezes = 0
-    repaint_queued = False
     def my_repaint(self):
+        print "my_repaint, freezes=%s on "%self.repaint_freezes,self
         self.repaint_queued = True
         if self.repaint_freezes <= 0:
             self.emit(SIGNAL("repaintRequested()"))
@@ -115,9 +129,8 @@ class UmbraLayer(QgsPluginLayer):
         return QgsRectangle(xmin,ymin,xmax,ymax)
       
     def draw(self, rendererContext):
-        print "Call to draw"
+        print "Call to draw on ",self
         
-        # print "About to draw_edges"
         try:
             self.draw_edges(rendererContext)
         except Exception as exc:
@@ -128,9 +141,13 @@ class UmbraLayer(QgsPluginLayer):
         self.repaint_queued = False
         self.repaint_freezes = 0
         print "End of Call to draw"
-        # was working okay with just drawLine, and returning false...
-        # working okay with drawing the grid and returning false
         return False # ?True
+
+    def renumber(self):
+        self.freeze_repaints()
+        self.grid.renumber()
+        self.prepare_lines()
+        self.thaw_repaints()
     
     def on_delete_edge(self,grid,func_name,j,**kwargs):
         self.qlines[j] = self.null_line
@@ -288,26 +305,29 @@ class UmbraLayer(QgsPluginLayer):
         painter.drawLines( self.qlines )
   
     def readXml(self, node):
-        pass
+        print "call to readXML"
     
     def writeXml(self, node, doc):
-        pass
-  
+        print "call to writeXml"
+        
     # Editing - this doesn't seem to work...
     def isEditable(self):
         return True
 
 
 class UmbraPluginLayerType(QgsPluginLayerType):
-  def __init__(self, iface):
-      QgsPluginLayerType.__init__(self, UmbraLayer.LAYER_TYPE)
-      self.iface = iface
+    def __init__(self, iface):
+        QgsPluginLayerType.__init__(self, UmbraLayer.LAYER_TYPE)
+        self.iface = iface
+  
+    def createLayer(self):
+        layer = UmbraLayer(iface=self.iface)
+        return layer
+  
+    def showLayerProperties(self,layer):
+        print "Request for layer properties"
+  
 
-  def createLayer(self):
-      layer = UmbraLayer(iface=self.iface)
-      return layer
 
-  def showLayerProperties(self,layer):
-      print "Request for layer properties"
-
-
+def is_umbra_layer(l):
+    return isinstance(l,UmbraLayer)

@@ -29,7 +29,7 @@
     <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
    </property>
   </widget>
-  <widget class="QComboBox" name="comboBox">
+  <widget class="QComboBox" name="formatCombo">
    <property name="geometry">
     <rect>
      <x>110</x>
@@ -41,21 +41,6 @@
    <property name="editable">
     <bool>false</bool>
    </property>
-   <item>
-    <property name="text">
-     <string>SUNTANS   {cells,edges,points}.dat</string>
-    </property>
-   </item>
-   <item>
-    <property name="text">
-     <string>SMS             *.grd</string>
-    </property>
-   </item>
-   <item>
-    <property name="text">
-     <string>DFlow FM *_net.nc</string>
-    </property>
-   </item>
   </widget>
   <widget class="QLabel" name="label">
    <property name="geometry">

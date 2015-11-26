@@ -33,16 +33,21 @@ from umbra_dockwidget import UmbraDockWidget
 import os.path
 
 import umbra_openlayer
-reload(umbra_openlayer)
+
+import umbra_savelayer
 
 import unstructured_grid
-reload(unstructured_grid)
 
 import umbra_layer
-reload(umbra_layer)
 
 import umbra_editor_tool
-reload(umbra_editor_tool)
+
+if 0: # not sure if this is messing things up. doesn't seem to matter.
+    reload(umbra_openlayer)
+    reload(umbra_savelayer)
+    reload(unstructured_grid)
+    reload(umbra_layer)
+    reload(umbra_editor_tool)
 
 class Umbra:
     """QGIS Plugin Implementation."""
@@ -197,24 +202,23 @@ class Umbra:
                         parent=self.iface.mainWindow(),
                         add_to_menu=True,
                         add_to_toolbar=False)
-
-        #action_open = QAction(QIcon(":/plugins/newmemorylayer/layer-memory-create.png"), 
-        #                           QCoreApplication.translate("NewMemoryLayer","New Memory Layer..."), 
-        #                           self.iface.mainWindow())
-
-        # add menu entry to load a grid
-        # cribbed from newmemorylayer.py plugin
-        #try:
-        #    self.iface.newLayerMenu().addAction(self.action)  # API >= 1.9
-        #except:
-        #    self.iface.addPluginToMenu("New Memory Layer", self.action)
+        self.add_action(icon_path,text='Save Umbra layer',
+                        callback=self.save_layer,
+                        parent=self.iface.mainWindow(),
+                        add_to_menu=True,
+                        add_to_toolbar=False)
+        self.add_action(icon_path,text='Renumber nodes/edges/cells',
+                        callback=self.renumber_layer,
+                        parent=self.iface.mainWindow(),
+                        add_to_menu=True,
+                        add_to_toolbar=False)
 
     #--------------------------------------------------------------------------
 
     def onClosePlugin(self):
         """Cleanup necessary items here when plugin dockwidget is closed"""
 
-        #print "** CLOSING Umbra"
+        print "** CLOSING Umbra"
 
         # disconnects
         self.dockwidget.closingPlugin.disconnect(self.onClosePlugin)
@@ -254,9 +258,11 @@ class Umbra:
             reg=QgsMapLayerRegistry.instance()
             to_remove=[]
             for k,v in reg.mapLayers().iteritems():
-                if isinstance(v,umbra_layer.UmbraLayer):
+                if umbra_layer.is_umbra_layer(v): #isinstance(v,umbra_layer.UmbraLayer):
                     print "Found an umbra layer"
                     to_remove.append(k)
+                else:
+                    print "Non-umbra layer: ",v
             print "About to remove layers"
             reg.removeMapLayers(to_remove)
             print "Done removing layers"
@@ -287,26 +293,63 @@ class Umbra:
             self.dockwidget.show()
             print "Done starting"
 
+            # presumably we can do this just once on activation -
+            QgsPluginLayerRegistry.instance().addPluginLayerType(umbra_layer.UmbraPluginLayerType(self.iface))
+            print "Added plugin layer type"
+
+
     def open_layer(self):
         self.activate()
 
         print "Would be asking for a path"
-        dialog=umbra_openlayer.UmbraOpenLayer(parent=self.iface.mainWindow())
-        dialog.exec_() # 
-        print "Dialog was exec'd..."
+        dialog=umbra_openlayer.UmbraOpenLayer(parent=self.iface.mainWindow(),
+                                              iface=self.iface)
+        dialog.exec_() 
 
+    def active_umbra_layer(self):
+        if not self.pluginIsActive:
+            return None
+        
+        clayer = self.iface.mapCanvas().currentLayer()
+        if umbra_layer.UmbraLayer is None:
+            return None
+        if not umbra_layer.is_umbra_layer(clayer): # isinstance(clayer,umbra_layer.UmbraLayer):
+            return None
+
+        return clayer
+
+    def save_layer(self):
+        clayer = self.active_umbra_layer()
+        if clayer is None:
+            return
+
+        dialog=umbra_savelayer.UmbraSaveLayer(parent=self.iface.mainWindow(),
+                                              iface=self.iface)
+        dialog.exec_()
+    
+    def renumber_layer(self):
+        clayer = self.active_umbra_layer()
+        if clayer is None:
+            return
+        clayer.renumber()
+        
     def run(self):
         """Run method that loads and starts the plugin"""
 
         print "** Call to run"
 
         self.activate()
-        print "Adding layer"
-        QgsPluginLayerRegistry.instance().addPluginLayerType(umbra_layer.UmbraPluginLayerType(self.iface))
-        print "Added plugin layer type"
-        my_layer = umbra_layer.UmbraLayer(iface=self.iface)
-        print "Created layer"
-        self.reg=QgsMapLayerRegistry.instance()
-        print "Got registry"
-        self.reg.addMapLayer(my_layer)
-        print "Done adding layer"
+        
+        # now part of activate
+        #QgsPluginLayerRegistry.instance().addPluginLayerType(umbra_layer.UmbraPluginLayerType(self.iface))
+        #print "Added plugin layer type"
+
+        # And this is superceded by actual open methods.
+
+        # print "Adding layer"
+        # my_layer = umbra_layer.UmbraLayer(iface=self.iface)
+        # print "Created layer"
+        # self.reg=QgsMapLayerRegistry.instance()
+        # print "Got registry"
+        # self.reg.addMapLayer(my_layer)
+        # print "Done adding layer"

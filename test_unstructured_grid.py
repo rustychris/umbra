@@ -74,3 +74,43 @@ ug.plot_edges()
 ug.plot_nodes()
 ug.plot_cells(centers=True)
 plt.axis(z)
+
+## 
+
+
+reload(unstructured_grid)
+
+ug=unstructured_grid.SuntansGrid(os.path.join( os.path.dirname(__file__),
+                                              "Umbra/sample_data/sfbay" ))
+
+
+nbr=ug.select_nodes_nearest([573295.74092741928, 4089100.3024193542])
+print "N nodes: ",ug.Nnodes()
+ug.delete_node_cascade(nbr)
+print "N deleted nodes: ",np.sum(ug.nodes['deleted'])
+print "N deleted edges: ",np.sum(ug.edges['deleted'])
+print "N nodes after delete: ",ug.Nnodes()
+
+ug.renumber()
+print "N nodes after renumber: ",ug.Nnodes()
+
+plt.clf()
+coll=ug.plot_edges()
+
+# was a point cache problem.
+ug.write_suntans('/home/rusty/test2')
+
+ug2=unstructured_grid.SuntansGrid('/home/rusty/test2')
+coll2=ug2.plot_edges()
+coll2.set_color('g')
+
+
+## 
+
+reload(unstructured_grid)
+ug2=unstructured_grid.SuntansGrid('/home/rusty/test2')
+
+ug2.write_pickle('/home/rusty/pickle')
+#-# 
+ug3=unstructured_grid.UnstructuredGrid.from_pickle('/home/rusty/pickle')
+print ug3._Listenable__post_listeners

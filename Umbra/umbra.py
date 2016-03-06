@@ -189,11 +189,11 @@ class Umbra:
         print "** initGui"
 
         icon_path = ':/plugins/Umbra/icon.png'
-        self.add_action(
-            icon_path,
-            text=self.tr(u'Umbra'),
-            callback=self.run,
-            parent=self.iface.mainWindow())
+        # self.add_action(
+        #     icon_path,
+        #     text=self.tr(u'Umbra'),
+        #     callback=self.run,
+        #     parent=self.iface.mainWindow())
 
         self.editor_tool = umbra_editor_tool.UmbraEditorTool(self.iface)
 
@@ -209,6 +209,12 @@ class Umbra:
                         add_to_toolbar=False)
         self.add_action(icon_path,text='Renumber nodes/edges/cells',
                         callback=self.renumber_layer,
+                        parent=self.iface.mainWindow(),
+                        add_to_menu=True,
+                        add_to_toolbar=False)
+
+        self.add_action(icon_path,text='Delete nodes by polygon',
+                        callback=self.delete_nodes_by_polygon,
                         parent=self.iface.mainWindow(),
                         add_to_menu=True,
                         add_to_toolbar=False)
@@ -332,6 +338,9 @@ class Umbra:
         if clayer is None:
             return
         clayer.renumber()
+
+    def delete_nodes_by_polygon(self):
+        pass
         
     def run(self):
         """Run method that loads and starts the plugin"""

@@ -6,6 +6,7 @@ import unstructured_grid
 import trigrid
 import utils
 import numpy as np
+from delft import dfm_grid
 
 from PyQt4.QtCore import QLineF, SIGNAL
 import PyQt4.QtGui as QtGui
@@ -45,8 +46,10 @@ class UmbraLayer(QgsPluginLayer):
                 self.grid=unstructured_grid.SuntansGrid(path)
             elif format=='pickle':
                 self.grid=unstructured_grid.UnstructuredGrid.from_pickle(path)
+            elif format=='DFM':
+                self.grid=dfm_grid.DFMGrid(fn=path)
             else:
-                raise Exception("Need to add other grid types!")
+                raise Exception("Need to add other grid types, like %s!"%format)
             
     def prepare_grid(self):
         """ after loading grid, set up any callbacks, cached data, bounds, etc.

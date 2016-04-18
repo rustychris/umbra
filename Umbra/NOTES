@@ -67,3 +67,21 @@ Next:
     * add cell with clean click in middle of polygon (<7 sides)
 
 
+--
+
+Proof of concept of using memory layers to handle the display - so we get
+the usual styling and manipulation of those layers?
+
+Try it out just via GUI:
+
+new project
+create memory layer - points
+>>> layer=iface.mapCanvas().currentLayer()
+
+>>> geom = QgsGeometry.fromPoint(QgsPoint(111,222))
+>>> caps = layer.dataProvider().capabilities()
+>>> feat = QgsFeature()
+>>> feat.setGeometry(geom)
+
+that worked!
+

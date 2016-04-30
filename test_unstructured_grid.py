@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 
 ## 
 reload(unstructured_grid)
+
 try:
     __file__
 except NameError:
@@ -66,7 +67,7 @@ plt.axis(z)
 
 ## 
 
-ug.move_node(n1,[580178.93145161285, 4093520.0352822575])
+ug.modify_node(n1,x=[580178.93145161285, 4093520.0352822575])
 
 # move a node
 plt.clf()

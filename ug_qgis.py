@@ -1,11 +1,27 @@
 import unstructured_grid
+import numpy as np
+import os
 
 from qgis.core import ( QgsGeometry, QgsPoint, QgsFeature,QgsVectorLayer, QgsField,
                         QgsMapLayerRegistry)
 
 from PyQt4.QtCore import QVariant
 
-g=unstructured_grid.SuntansGrid("/home/rusty/models/suntans/spinupdated/rundata/")
+g=unstructured_grid.SuntansGrid(os.path.join( os.environ['HOME'],"src/umbra/Umbra/sample_data/sfbay/"))
+
+
+g.add_node_field('feat_id',np.zeros(g.Nnodes(),'i4')-1)
+g.add_edge_field('feat_id',np.zeros(g.Nedges(),'i4')-1)
+g.add_cell_field('feat_id',np.zeros(g.Ncells(),'i4')-1)
+
+# instrument the grid to propagate changes back to the UI
+def on_modify_node(g,func_name,n,**k):
+    if 'x' in k:
+        for j in g.node_to_edges(n):
+            print "update geometry of edge %d"%j
+            
+g.subscribe_after('modify_node',on_modify_node)
+
 
 def populate_nodes(layer):
     layer.dataProvider().deleteFeatures(layer.allFeatureIds())
@@ -14,23 +30,37 @@ def populate_nodes(layer):
     feats=[]
     for n in range(g.Nnodes()):
         geom = QgsGeometry.fromPoint(QgsPoint(g.nodes['x'][n,0],g.nodes['x'][n,1]))
+        # doesn't work to set the feature id...
         feat = QgsFeature()
         feat.setGeometry(geom)
         feats.append(feat)
     (res, outFeats) = layer.dataProvider().addFeatures(feats)
+
+    g.nodes['feat_id'] = [f.id() for f in outFeats]
+
+    if 1:
+        def on_node_geometry_changed(feat_id,geom):
+            xy=geom.asPoint()
+            n=np.nonzero( g.nodes['feat_id']==feat_id )[0][0]
+            g.modify_node(n,x=xy)
+        layer.geometryChanged.connect(on_node_geometry_changed)
+
     return res
 
 
+def edge_geometry(g,j):
+    seg=g.nodes['x'][g.edges['nodes'][j]]
+    pnts=[QgsPoint(segs[0,0],segs[0,1]),
+          QgsPoint(segs[1,0],segs[1,1])]
+    return QgsGeometry.fromPolyline(pnts)
+    
 def populate_edges(layer):
     layer.dataProvider().deleteFeatures(layer.allFeatureIds())
 
     # takes an existing line memory layer, adds in nodes from g
     feats=[]
-    segs=g.nodes['x'][g.edges['nodes']]
     for j in g.valid_edge_iter():
-        pnts=[QgsPoint(segs[j,0,0],segs[j,0,1]),
-              QgsPoint(segs[j,1,0],segs[j,1,1])]
-        geom = QgsGeometry.fromPolyline(pnts)
+        geom=edge_geometry(g,j)
         feat = QgsFeature()
         feat.initAttributes(4)
         feat.setAttribute(0,j) 
@@ -39,7 +69,14 @@ def populate_edges(layer):
         feat.setGeometry(geom)
         feats.append(feat)
     (res, outFeats) = layer.dataProvider().addFeatures(feats)
+    g.edges['feat_id']=[f.id() for f in outFeats]
+
     return res
+
+# HERE:
+#   need to store a reference to the edge layer so that update_edge_geometry
+#   can push a new edge_geometry(g,j) to the layer.
+#   nearing time to wrap this into a class.
 
 def populate_cells(layer):
     layer.dataProvider().deleteFeatures(layer.allFeatureIds())
@@ -92,7 +129,8 @@ def populate_all(canvas):
         QgsMapLayerRegistry.instance().addMapLayer(layer)
 
     # set extent to the extent of our layer
-    canvas.setExtent(layer.extent())
+    # skip while developing
+    # canvas.setExtent(layer.extent())
 
 # remarkably, this all works and is relatively fast.
 # Next: 
@@ -105,3 +143,15 @@ def populate_all(canvas):
 #   drawing polygons in the cell layer to then match and/or create nodes/edges on demand.
 
 # keep as a standalone script for a while - much easier to develop than plugin.
+
+# invoke this in the python console as:
+# ug_qgis.populate_all(iface.mapCanvas())
+
+# Editing a node -
+#   start with simplest
+#    1. moving a node is recognized by the grid
+#    2. that propagates updates to the edge and cell layers
+
+# via the geometryChanged slot?
+# QgsMapLayerRegistry.instance().addMapLayer(layer)
+

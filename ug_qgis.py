@@ -31,13 +31,21 @@ class UgQgis(object):
     # instrument the grid to propagate changes back to the UI
     def on_modify_node(self,g,func_name,n,**k):
         if 'x' in k:
-            prov=self.el.dataProvider()
+            edge_changes={}
             for j in self.g.node_to_edges(n):
-                # print "update geometry of edge %d"%j
                 fid=self.g.edges[j]['feat_id']
                 geom=self.edge_geometry(j)
-                prov.changeGeometryValues({ fid : geom })
+                edge_changes[fid]=geom
+            self.el.dataProvider().changeGeometryValues(edge_changes)
             self.el.triggerRepaint()
+
+            cell_changes={}
+            for i in self.g.node_to_cells(n):
+                fid=self.g.nodes[i]['feat_id']
+                geom=self.cell_geometry(i)
+                cell_changes[fid]=geom
+            self.cl.dataProvider().changeGeometryValues(cell_changes)
+            self.cl.triggerRepaint()
                 
     def populate_nodes(self):
         layer=self.nl

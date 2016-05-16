@@ -8,6 +8,7 @@ from qgis.core import ( QgsGeometry, QgsPoint, QgsFeature,QgsVectorLayer, QgsFie
 from qgis.gui import QgsMapTool
 from qgis import utils
 from PyQt4.QtCore import QVariant, Qt
+from PyQt4.QtGui import QCursor, QPixmap
 
 g=unstructured_grid.SuntansGrid(os.path.join( os.environ['HOME'],"src/umbra/Umbra/sample_data/sfbay/"))
 
@@ -219,12 +220,20 @@ class UgQgis(object):
         li.currentLayerChanged.disconnect(self.on_layer_changed)
 
     def on_layer_changed(self,layer):
-        if layer == self.nl:
-            # this much works..
-            print "Setting map tool to ours"
-            self.iface.mapCanvas().setMapTool(self.tool)
+        if layer is not None:
+            # Not sure why, but using layer.id() was triggering an error
+            # about the layer being deleted
+            if layer.name()==self.nl.name():
+                # doesn't ever happen
+                print "Setting map tool to ours"
+                self.iface.mapCanvas().setMapTool(self.tool)
+            else:
+                self.log("on_layer_changed, but to id=%s"%layer.name())
+                self.log("My node name=%s"%self.nl.name())
 
-
+    def log(self,s):
+        with open(os.path.join(os.path.dirname(__file__),'log'),'a') as fp:
+            fp.write(s+"\n")
 
 class UgEditTool(QgsMapTool):
     # All geometric edits go through this tool
@@ -244,15 +253,13 @@ class UgEditTool(QgsMapTool):
     # with key modifiers, and should not interfere with panning or zooming the canvas
 
     # Scheme 1:
-    #   Cells are toggled with the spacebar or 'c' key, based on current mouse position
+    #   Click and drag moves a node
     #   Shift engages edge operations:
     #     shift-click starts drawing edges, with nodes selected or created based on radius
     #     so you can draw a linked bunch of edges by holding down shift and clicking along the path
+    #   Creating an isolated node is shift click, then release shift before clicking again
     #   Right click signifies delete, choosing the nearest node or edge center within a radius
-    #   Click and drag moves a node
-    #   Creating an isolated node is shift click, then release shift, or maybe double-click.
-    #      doesn't need to be as easy.  if it's shift-click, then we have to detect release of
-    #      of shift, since otherwise we can't distinguish two node creates from an edge create
+    #   Cells are toggled with the spacebar or 'c' key, based on current mouse position
 
     def __init__(self, canvas, ug_qgis):
         QgsMapTool.__init__(self, canvas)
@@ -262,6 +269,8 @@ class UgEditTool(QgsMapTool):
         # track state of ongoing operations
         self.op_action=None
         self.op_node=None
+        
+        self.cursor = QCursor(Qt.CrossCursor)
 
     node_click_pixels=10
     edge_click_pixels=10
@@ -304,7 +313,7 @@ class UgEditTool(QgsMapTool):
                 self.add_edge_or_node(event)
         else:
             self.log("Press event, but not the left button")
-            pass
+            self.clear_op()
 
         self.log("Press event end")
 
@@ -365,6 +374,7 @@ class UgEditTool(QgsMapTool):
             xy=[point.x(),point.y()]
             self.log( "Modifying location of node %d self=%s"%(self.op_node,id(self)) )
             self.ug_qgis.g.modify_node(self.op_node,x=xy)
+            self.clear_op()
         elif self.op_action=='add_edge':
             # all the action happens on the press, and releasing the shift key
             # triggers the end of the add_edge mode
@@ -394,8 +404,8 @@ class UgEditTool(QgsMapTool):
         self.op_action=None 
 
     def activate(self):
-        print "active"
-        self.setCursor(Qt.CrossCursor)
+        self.log("active")
+        self.canvas.setCursor(self.cursor)
 
     def deactivate(self):
         print "inactive"
@@ -415,12 +425,9 @@ uq=UgQgis(g)
 uq.populate_all(utils.iface)
  
  
-# remarkably, this all works and is relatively fast.
-# Next: 
-# 3. allow for editing nodes and propagating that to edges and cells.
+# Next:
+# having trouble with the layer-select logic tripping the maptool activation.
 # more involved editing modes: 
-#   adding nodes, sync back to unstructured grid.
-#   dragging edge endpoints which update cells and nodes
 #   drawing polygons in the cell layer to then match and/or create nodes/edges on demand.
 
 # keep as a standalone script for a while - much easier to develop than plugin.
@@ -441,19 +448,5 @@ uq.populate_all(utils.iface)
 #    -- avoids awkward modification routing
 #    -- more work early on, possibly have to transition to plugin architecture sooner.
 
-
-# already have a pilot test for Option A
-# try a pilot test for option B - can we listen in on some mouse events?
-# canvas=iface.mapCanvas() # => QgsMapCanvas
-# can get keyPress and keyRelease from its signals.
-# changes in mapTools
-# mouseLastXY
-
 # better to go with the maptool approach, like here:
 # http://gis.stackexchange.com/questions/45094/how-to-programatically-check-for-a-mouse-click-in-qgis
-
-# edge mode:
-#   roughly want something where holding shift down puts you into edge mode
-#   as long as shift is held down, clicks select or create nodes, and successive nodes are
-#   joined by edges
-

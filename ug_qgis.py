@@ -1,11 +1,13 @@
 import unstructured_grid
 import numpy as np
+from collections import defaultdict
 import os
 
 from qgis.core import ( QgsGeometry, QgsPoint, QgsFeature,QgsVectorLayer, QgsField,
                         QgsMapLayerRegistry, QgsFeatureRequest )
 from qgis.gui import QgsMapTool
-from PyQt4.QtCore import QVariant
+from qgis import utils
+from PyQt4.QtCore import QVariant, Qt
 
 g=unstructured_grid.SuntansGrid(os.path.join( os.environ['HOME'],"src/umbra/Umbra/sample_data/sfbay/"))
 
@@ -24,7 +26,9 @@ class UgQgis(object):
 
         # install grid callbacks:
         g.subscribe_after('modify_node',self.on_modify_node)
+        g.subscribe_after('add_node',self.on_add_node)
 
+        g.subscribe_after('add_edge',self.on_add_edge)
         return g
 
     direct_edits=False # edits come through map tool
@@ -56,6 +60,25 @@ class UgQgis(object):
             self.cl.dataProvider().changeGeometryValues(cell_changes)
             self.cl.triggerRepaint()
 
+    def on_add_node(self,g,func_name,return_value,**k):
+        n=return_value
+        geom=self.node_geometry(n)
+        feat = QgsFeature() # can't set feature_ids
+        feat.setGeometry(geom)
+        (res, outFeats) = self.nl.dataProvider().addFeatures([feat])
+
+        self.g.nodes['feat_id'][n] = outFeats[0].id()
+        self.nl.triggerRepaint()
+
+    def on_add_edge(self,g,func_name,return_value,**k):
+        j=return_value
+        feat=QgsFeature()
+        feat.setGeometry(self.edge_geometry(j))
+        (res,outFeats) = self.el.dataProvider().addFeatures([feat])
+
+        self.g.edges['feat_id'][j] = outFeats[0].id()
+        self.el.triggerRepaint()
+         
     def node_geometry(self,n):
         return QgsGeometry.fromPoint(QgsPoint(self.g.nodes['x'][n,0],
                                               self.g.nodes['x'][n,1]))
@@ -187,7 +210,7 @@ class UgQgis(object):
         # skip while developing
         # canvas.setExtent(layer.extent())
         
-        self.tool=UgTool(canvas,self)
+        self.tool=UgEditTool(canvas,self)
         canvas.setMapTool(self.tool)
 
     def __del__(self):
@@ -200,7 +223,198 @@ class UgQgis(object):
             # this much works..
             print "Setting map tool to ours"
             self.iface.mapCanvas().setMapTool(self.tool)
+
+
+
+class UgEditTool(QgsMapTool):
+    # All geometric edits go through this tool
+    # Edit operations:
+    #   add node
+    #   delete node
+    #   move node
+    #   add edge between existing nodes
+    #   add edge with one existing node
+    #   add edge with two new nodes
+    #   delete edge
+    #   add cell
+    #   delete cell
+
+
+    # All of those should be possible with mouse actions on the canvas combined
+    # with key modifiers, and should not interfere with panning or zooming the canvas
+
+    # Scheme 1:
+    #   Cells are toggled with the spacebar or 'c' key, based on current mouse position
+    #   Shift engages edge operations:
+    #     shift-click starts drawing edges, with nodes selected or created based on radius
+    #     so you can draw a linked bunch of edges by holding down shift and clicking along the path
+    #   Right click signifies delete, choosing the nearest node or edge center within a radius
+    #   Click and drag moves a node
+    #   Creating an isolated node is shift click, then release shift, or maybe double-click.
+    #      doesn't need to be as easy.  if it's shift-click, then we have to detect release of
+    #      of shift, since otherwise we can't distinguish two node creates from an edge create
+
+    def __init__(self, canvas, ug_qgis):
+        QgsMapTool.__init__(self, canvas)
+        self.canvas = canvas
+        self.ug_qgis=ug_qgis
+
+        # track state of ongoing operations
+        self.op_action=None
+        self.op_node=None
+
+    node_click_pixels=10
+    edge_click_pixels=10
+
+    def event_to_item(self,event,types=['node','edge']):
+        self.log("Start of event_to_item self=%s"%id(self))
+        pix_x = event.pos().x()
+        pix_y = event.pos().y()
+
+        map_to_pixel=self.canvas.getCoordinateTransform()
         
+        map_point = map_to_pixel.toMapCoordinates(pix_x,pix_y)
+        map_xy=[map_point.x(),map_point.y()]
+        res={}
+        if 'node' in types:
+            n=self.ug_qgis.g.select_nodes_nearest(map_xy)
+            node_xy=self.ug_qgis.g.nodes['x'][n]
+            node_pix_point = map_to_pixel.transform(node_xy[0],node_xy[1])
+            dist2= (pix_x-node_pix_point.x())**2 + (pix_y-node_pix_point.y())**2 
+            self.log("Distance^2 is %s"%dist2)
+            if dist2<=self.node_click_pixels**2:
+                # back to pixel space to calculate distance
+                res['node']=n
+            else:
+                res['node']=None
+        if 'edge' in types:
+            self.log("No edge support yet")
+            assert False
+        self.log( "End of event_to_item self=%s"%id(self) )
+        return res
+        
+    def canvasPressEvent(self, event):
+        super(UgEditTool,self).canvasPressEvent(event)
+
+        if event.button() == Qt.LeftButton:
+            # or Qt.ControlModifier
+            if event.modifiers() == Qt.NoModifier:
+                self.start_move_node(event)
+            elif event.modifiers() == Qt.ShiftModifier:
+                self.add_edge_or_node(event)
+        else:
+            self.log("Press event, but not the left button")
+            pass
+
+        self.log("Press event end")
+
+    def start_move_node(self,event):
+        items=self.event_to_item(event,types=['node'])
+        if items['node'] is None:
+            self.log("Didn't hit a node")
+            self.clear_op() # just to be safe
+        else:
+            n=items['node']
+            self.log("canvas press is %s"%n)
+            self.op_node=n
+            self.op_action='move_node'
+
+    def add_edge_or_node(self,event):
+        if self.op_action=='add_edge':
+            self.log("Continuing add_edge_or_node")
+            last_node=self.op_node
+        else:
+            self.log("Starting add_edge_or_node")
+            last_node=None
+            
+        self.op_action='add_edge'
+        self.op_node=self.select_or_add_node(event)
+        if last_node is not None:
+            j=self.ug_qgis.g.add_edge(nodes=[last_node,self.op_node])
+            self.log("Adding an edge! j=%d"%j)
+
+    def select_or_add_node(self,event):
+        items=self.event_to_item(event,types=['node'])
+        if items['node'] is None:
+            map_point=event.mapPoint()
+            map_xy=[map_point.x(),map_point.y()]
+
+            self.log("Creating new node")
+            return self.ug_qgis.g.add_node(x=map_xy) # reaching a little deep
+        else:
+            return items['node']
+            
+    def log(self,s):
+        with open(os.path.join(os.path.dirname(__file__),'log'),'a') as fp:
+            fp.write(s+"\n")
+    
+    # def canvasMoveEvent(self, event):
+    #     x = event.pos().x()
+    #     y = event.pos().y()
+    #     point = self.canvas.getCoordinateTransform().toMapCoordinates(x, y)
+
+    def canvasReleaseEvent(self, event):
+        super(UgEditTool,self).canvasReleaseEvent(event)
+        self.log("Release event top, type=%s"%event.type())
+
+        self.log("Release with op_node=%s self=%s"%(self.op_node,id(self)))
+        if self.op_action=='move_node' and self.op_node is not None:
+            x = event.pos().x()
+            y = event.pos().y()
+            point = self.canvas.getCoordinateTransform().toMapCoordinates(x, y)
+            xy=[point.x(),point.y()]
+            self.log( "Modifying location of node %d self=%s"%(self.op_node,id(self)) )
+            self.ug_qgis.g.modify_node(self.op_node,x=xy)
+        elif self.op_action=='add_edge':
+            # all the action happens on the press, and releasing the shift key
+            # triggers the end of the add_edge mode
+            pass 
+        else:
+            # think safety, act safely.
+            self.clear_op()
+        self.log("Release event end")
+
+    #def keyPressEvent(self,event):
+    #    super(UgEditTool,self).keyPressEvent(event)
+    #    self.log("keyPress")
+
+    def keyReleaseEvent(self,event):
+        super(UgEditTool,self).keyReleaseEvent(event)
+        # do we check for modifiers, or they key?
+        if event.key() == Qt.Key_Shift:
+            self.log("released shift")
+            if self.op_action=='add_edge':
+                self.clear_op()
+        # seems like intercepting a shift could get us into trouble
+        # ignore() lets it percolate to other interested parties
+        event.ignore()
+
+    def clear_op(self):
+        self.op_node=None
+        self.op_action=None 
+
+    def activate(self):
+        print "active"
+        self.setCursor(Qt.CrossCursor)
+
+    def deactivate(self):
+        print "inactive"
+
+    def isZoomTool(self):
+        return False
+
+    def isTransient(self):
+        return False
+
+    def isEditTool(self):
+        return True
+
+    
+uq=UgQgis(g)
+ 
+uq.populate_all(utils.iface)
+ 
+ 
 # remarkably, this all works and is relatively fast.
 # Next: 
 # 3. allow for editing nodes and propagating that to edges and cells.
@@ -212,13 +426,7 @@ class UgQgis(object):
 # keep as a standalone script for a while - much easier to develop than plugin.
 
 # invoke this in the python console as:
-# ug_qgis.populate_all(iface)
-
-# Editing a node -
-#   start with simplest
-#    1. moving a node is recognized by the grid DONE
-#    2. that propagates updates to the edge and cell layers DONE
-
+# ug_qgis.uq.populate_all(iface)
 
 # Editing design:
 #   Option A: edits go through the respective layers.
@@ -244,58 +452,8 @@ class UgQgis(object):
 # better to go with the maptool approach, like here:
 # http://gis.stackexchange.com/questions/45094/how-to-programatically-check-for-a-mouse-click-in-qgis
 
-class UgTool(QgsMapTool):
-    def __init__(self, canvas, ug_qgis):
-        QgsMapTool.__init__(self, canvas)
-        self.canvas = canvas
-        self.ug_qgis=ug_qgis
-        self.select_node=None
-
-    def canvasPressEvent(self, event):
-        x = event.pos().x()
-        y = event.pos().y()
-
-        point = self.canvas.getCoordinateTransform().toMapCoordinates(x, y)
-        xy=[point.x(),point.y()]
-
-        n=self.ug_qgis.g.select_nodes_nearest(xy)
-        print "Nearest node is ",n
-        self.select_node=n
-
-    def canvasMoveEvent(self, event):
-        x = event.pos().x()
-        y = event.pos().y()
-        point = self.canvas.getCoordinateTransform().toMapCoordinates(x, y)
-
-    def canvasReleaseEvent(self, event):
-        #Get the click
-        x = event.pos().x()
-        y = event.pos().y()
-
-        point = self.canvas.getCoordinateTransform().toMapCoordinates(x, y)
-        xy=[point.x(),point.y()]
-        if self.select_node is not None:
-            n=self.select_node
-            self.select_node=None
-            print "Modifying location of node %d"%n
-            self.ug_qgis.g.modify_node(n,x=xy)
-
-    def activate(self):
-        print "active"
-
-    def deactivate(self):
-        print "inactive"
-
-    def isZoomTool(self):
-        return False
-
-    def isTransient(self):
-        return False
-
-    def isEditTool(self):
-        return True
-
-    
-uq=UgQgis(g)
-
+# edge mode:
+#   roughly want something where holding shift down puts you into edge mode
+#   as long as shift is held down, clicks select or create nodes, and successive nodes are
+#   joined by edges
 

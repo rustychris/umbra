@@ -186,7 +186,7 @@ ax.axis('equal')
 ax.axis(xmin=-2,xmax=12,ymin=-2,ymax=12)
 plt.draw()
 
-## 
+#-# 
 
 g.cells_center(refresh=True) # ,mode='sequential')
 
@@ -215,8 +215,7 @@ constrained=[int(len(g2.node_to_edges(n))==2)
              for n in g2.valid_node_iter() ]
 g2.add_node_field('constrained',np.array(constrained))
 
-
-## 
+# # 
 
 plt.figure(1).clf()
 fig,ax=plt.subplots(1,1,num=1)
@@ -228,146 +227,7 @@ ax.scatter(g2.nodes['x'][:,0],
 
 plt.draw()
 
-
 ## 
-
-alpha=0.5 # low means favor area, high means favor angle
-beta=0.25 # weighting for cell-centered costs
-gamma=0.5 # weighting for circumcenter vs. distance from edge
-
-def link_cost_angle(g,j):
-    vc=g.cells_center()
-
-    c1,c2=g.edges['cells'][j]
-    n1,n2=g.edges['nodes'][j]
-
-    assert c1>=0
-    assert c2>=0
-
-    vec_norm=vc[c2]-vc[c1]
-    vec_tan =g.nodes['x'][n1]- g.nodes['x'][n2]
-
-    vec_norm=vec_norm/utils.mag(vec_norm)
-    vec_tan =vec_tan/utils.mag(vec_tan)
-
-    parallel=(vec_norm*vec_tan).sum()
-    #return np.abs(parallel) # |cos(theta)|
-    # maybe this is better behaved?
-    return parallel**2
-
-def link_cost_area(g,j):
-    Ac=g.cells_area()[g.edges['cells'][j]]
-    return np.abs(Ac[0] - Ac[1]) / Ac.mean()
-
-def link_cost(g,j):
-    cost=0
-    if alpha>0:
-        cost+=alpha*link_cost_angle(g,j)
-    if alpha<1:
-        cost+= (1-alpha)*link_cost_area(g,j)
-    return cost
-
-def all_links_cost(g):
-    internal_edges=np.nonzero( np.all(g.edges['cells']>=0,axis=1) )[0]
-    costs=[link_cost(g,j) for j in internal_edges]
-    return np.sum(costs)
-
-def cell_edges_signed_distance(g,c):
-    vc=g.cells_center()[c]
-    nodes=g.cell_to_nodes(c)
-    L=np.sqrt(g.cells_area()[c])
-    dists=[]
-    for a,b in utils.circular_pairs(g.nodes['x'][nodes]):
-        ab=b-a
-        ab/=utils.mag(ab)
-        norm=[-ab[1],ab[0]]
-        c_ab=np.dot(vc-a,norm)
-        dists.append( c_ab/L )
-    return np.array(dists)
-
-def cell_clearance_cost(g,c):
-    return (
-        cell_edges_signed_distance(g,c)**(-2)
-    ).mean()
-
-def cell_circumcenter_cost(g,c):
-    nodes=g.cell_to_nodes(c)
-    nx=g.nodes['x'][nodes]
-    vc=g.cells_center()[c]
-    # ad-hoc choice of powers here, skipping the sqrt
-    dists2=((vc-nx)**2).sum(axis=1)
-    return np.std(dists2)/np.mean(dists2)
-
-def cell_cost(g,c):
-    return gamma*cell_circumcenter_cost(g,c) + (1-gamma)*cell_clearance_cost(g,c)
-
-def all_cells_cost(g):
-    costs=[cell_cost(g,c) for c in g.valid_cell_iter()]
-    return np.sum(costs)
-
-def modified_grid(g,x):
-    g_test=g.copy()
-    xys=x.reshape((-1,2))
-    g_test.nodes['x'][movable]=xys
-    g_test.cells_center(refresh=True,mode='sequential')
-    g_test.cells['_area']=np.nan
-    return g_test
-
-def cost(x):
-    gmod=modified_grid(g2,x)
-    cost=0
-    if beta<1:
-        cost+=(1-beta)*all_links_cost(gmod)
-    if beta>0:
-        cost+=beta*all_cells_cost(gmod) 
-    return cost
-
-
-# angle cost on the larger test case needs better control
-# on aspect ratio
-movable=g2.nodes['constrained']==C_NONE
-x0=g2.nodes['x'][movable].ravel()
-print cost(x0)
-xopt=x0
-
-
-## 
-
-if 0:
-    # maybe the best, including with powell
-    alpha=0.75 # low means favor area, high means favor angle
-    beta=0.25 # weighting for cell-centered costs
-    gamma=0.5 # weighting for circumcenter vs. distance from edge
-if 0:
-    # if the topology is dialed in, don't really need the
-    # area cost
-    # this takes 76s, 6192 evaluations
-    # cost of 12.56 -> 12.23
-    # achieves max circ error 0.001 and angle of 0.04
-    alpha=1.0 # low means favor area, high means favor angle
-    beta=0.25 # weighting for cell-centered costs
-    gamma=0.5 # weighting for circumcenter vs. distance from edge
-if 1:
-    # this took 340s, with 26k function evaluations
-    # cost went from 0.39 to 0.00035, and ended with 0.0004 max
-    # circum error and 0.00 deg angle error
-    # I made some change, and then it took 565s and 45k evals.
-    # then changed the abs to be square...
-    # that made starting cost 0.00631, down to 1e-21
-    # with 26k evaluations over 132s
-    alpha=1.0 # low means favor area, high means favor angle
-    beta=0.0 # weighting for cell-centered costs
-    gamma=1.0 # weighting for circumcenter vs. distance from edge
-
-print "Starting cost: ",cost(x0)
-t=time.time()
-xopt=fmin_powell(cost,xopt) # slow, but works very well in one go.
-elapsed=time.time()-t
-print "Ending cost: ",cost(xopt)
-print "%.3fs"%elapsed
-
-g_test=modified_grid(g2,xopt)
-g_test.report_orthogonality()
 
 # with the nearly optimal grid as starting point, but 70 dofs (35*2)
 # 8800 function evaluations
@@ -385,7 +245,6 @@ g_test.report_orthogonality()
 #    directly?
 
 ## 
-
 
 g_test=g # modified_grid(g2,xopt)
 g_test.report_orthogonality()
@@ -409,9 +268,32 @@ for n in g_test.valid_node_iter():
 
 ## 
 
+def node_to_triples(g,n,full=True):
+    """ full=False: only include triples with n in the middle
+    """
+    trips=[]
+    cells=g.node_to_cells(n)
+    for c in cells:
+        c_nodes=list(g.cell_to_nodes(c))
+        idx=c_nodes.index(n)
+        N=len(c_nodes)
+        if full:
+            offsets=[-1,0,1]
+        else:
+            offsets=[0]
+        for offset in offsets:
+            trips.append( [c_nodes[(idx-1+offset)%N],
+                           c_nodes[(idx  +offset)%N],
+                           c_nodes[(idx+1+offset)%N] ] )
+    return np.array(trips)
+
+
+## 
+
+# optimize based on the angles formed with the circumcenter
 
 # clumping - optimize a single node at a time
-def ncostf(g,n):
+def ncostf(g,n,w_area=0,w_angle=0,w_length=0,w_cangle=0,verbose=0):
     def modified_node_grid(g_src,n,x):
         g_test=g_src.copy()
         g_test.nodes['x'][n]=x
@@ -428,6 +310,12 @@ def ncostf(g,n):
     links=[j for j in edges
            if np.all(g.edges['cells'][j]>0)]
 
+    triples=node_to_triples(g,n)
+
+    if verbose:
+        print "COST: n=%d cells %s  links %s"%(n,cells,links)
+        print "   triples: ",triples
+
     def cost(x):
         g_mod=modified_node_grid(g,n,x)
         # This one sucked:
@@ -439,71 +327,163 @@ def ncostf(g,n):
         cost=0
         if 1:
             nsi=4 # quads only right now...
-            centers=g_mod.cells_center()
+            centers=g_mod.cells_center(mode='sequential')
             # this is somehow making the mean and max circumcenter error larger!
             offsets = g_mod.nodes['x'][g_mod.cells['nodes'][cells,:nsi]] - centers[cells,None,:]
             dists = utils.mag(offsets)
-            error = np.std(dists,axis=1) / np.mean(dists,axis=1)
-            cost+= error.mean()
-        
+
+            # maybe lets small cells take over too much
+            # cost += np.mean( np.std(dists,axis=1) / np.mean(dists,axis=1) )
+            # different, but not much better
+            # cost += np.mean( np.std(dists,axis=1) )
+            base_cost=np.max( np.std(dists,axis=1)  )
+            if verbose:
+                print "   Circum. cost: %f"%(base_cost)
+            cost += base_cost
+            
+        if w_area>0 and len(links):
+            # this helps a bit, but sometimes getting good areas
+            # means distorting the shapes
+            A=g_mod.cells_area()
+            pairs=A[ g.edges['cells'][links] ]
+            diffs=(pairs[:,0]-pairs[:,1])/pairs.mean(axis=1)
+            area_cost=w_area*np.sum(diffs**2)
+            if verbose:
+                print "   Area cost: %f"%area_cost
+            cost+=area_cost
+        if w_length>0:
+            # if it's not too far off, this makes it look nicer at
+            # the expense of circ. errors
+            l_cost=0
+            g_mod.update_cell_edges()
+            lengths=g_mod.edges_length()
+            for c in cells:
+                e=g_mod.cell_to_edges(c)
+                if 0:
+                    # maybe that's too much leeway, and
+                    # the user should have to specify aspect ratios
+                    if len(e)==4:
+                        a,b,c,d=lengths[e]
+                        l_cost+=( ((a-c)/(a+c))**2 +
+                                  ((b-d)/(b+d))**2 )
+                else:
+                    lmean=lengths.mean()
+                    l_cost+= np.sum( (lengths-lmean)**2 )
+            if verbose:
+                print "   Length cost: %f"%( w_length*l_cost )
+            cost+=w_length*l_cost
+        if w_angle>0:
+            # interior angle of cells
+            deltas=np.diff(g_mod.nodes['x'][triples],axis=1)
+            angles=np.diff( np.arctan2( deltas[:,:,1], deltas[:,:,0] ),axis=1) % (2*np.pi) * 180/np.pi
+            angle_cost=w_angle*np.sum( (angles-90)**2 )
+            if verbose:
+                print "   Angle cost: %f"%angle_cost
+            cost+=angle_cost
+        if w_cangle>0:
+            cangle_cost=0
+            for c in cells:
+                nodes=g.cell_to_nodes(c)
+                deltas=g_mod.nodes['x'][nodes] - g_mod.cells_center()[c]
+                angles=np.arctan2(deltas[:,1],deltas[:,0]) * 180/np.pi
+                cds=utils.cdiff(angles) % 360.
+                cangle_cost+=np.sum( (cds-90)**4 )
+            if verbose:
+                print "   CAngle cost: %f"%( w_cangle*cangle_cost )
+            cost+=w_cangle*cangle_cost
+                
         return cost
     return cost
 
 g.update_cell_edges()
+n=29
 nx0=g2.nodes['x'][n]
-print ncostf(g,n)(nx0)
+print ncostf(g,n,w_area=0.0,w_length=0,w_angle=0.01,w_cangle=0.0,verbose=1)(nx0)
 
 ## 
 
 idx_movable=np.nonzero(movable)[0]
 
-g=g_orig.copy()
+g_perturb=g_orig.copy()
+
+g_perturb.nodes['x'][movable] += 0.5 * (np.random.random( g_perturb.nodes['x'][movable].shape )-0.5)
 
 #g.nodes['x'][1,1]-=0.2
+## 
+g=g_perturb.copy()
+## 
+# the perturbed grid doesn't correct very well, though.
+# max error in cell 10 of 0.2
+# as a cell gets smaller, it weights the movement of a node
+# greater since errors are normalized by radii
+# one approach is to include area ratios for each link
+# another is to just avoid normalization.  This means that it's
+# not the same metric as in report_orthogonality
 
-g.report_orthogonality()
-g_orig.report_orthogonality()
-for it in range(3):
-    for n in idx_movable:
+g_errs=g.circumcenter_errors()
+g_orig_err=g_orig.circumcenter_errors()
+
+for it in range(1):
+    # does it even out more quickly with some noise?
+    # g.nodes['x'][movable] += 0.1 * (np.random.random( g.nodes['x'][movable].shape ) - 0.5)
+
+    reordered=np.argsort( np.random.random(len(idx_movable)) )
+    for n in idx_movable[reordered]:
         t=time.time()
         x0=g.nodes['x'][n].copy()
-        costf=ncostf(g,n)
+        costf=ncostf(g,n,w_length=0.0,w_area=0,w_angle=0.1,w_cangle=0.000001)
         c0=costf(x0)
-        nxopt=fmin(ncostf(g,n),x0)
+        nxopt=fmin(costf,x0,disp=False)
         copt=costf(nxopt)
-        if copt>=c0:
-            print "--------- OPT FAILED ---------"
+        if copt>c0:
+            print "F",
+        elif copt==c0:
+            print "~",
         else:
             g.nodes['x'][n]=nxopt
             g.cells_center(refresh=True)
-        elapsed=time.time()-t
-        print "Node=%d elapsed: %.3fs - delta %s, cost delta=%f"%(n,elapsed,nxopt-x0, c0-copt)
+            elapsed=time.time()-t
+            print "Node=%d elapsed: %.3fs - delta %s, cost delta=%f"%(n,elapsed,nxopt-x0, c0-copt)
+    g_errs_new=g.circumcenter_errors()
 
-## 
+# # 
 
 ax.cla()
 g.plot_edges(ax=ax)
-coll=g_orig.plot_edges(ax=ax)
-coll.set_color('k')
-coll.set_lw(0.2)
+#coll=g_perturb.plot_nodes(ax=ax)
+#coll.set_color('g')
+#coll.set_lw(1)
+#coll=g_orig.plot_edges(ax=ax)
+#coll.set_color('k')
+#coll.set_lw(0.2)
 
+if 1:
+    vc=g.cells_center()
+    for c in g.valid_cell_iter():
+        ax.text(vc[c,0],vc[c,1],str(c),color='b',size=7,ha='center',va='center')
+    nx=g.nodes['x']
+    for n in g.valid_node_iter():
+        if g2.nodes['constrained'][n]==C_FIXED:
+            color='r'
+        else:
+            color='b'
+        ax.text(nx[n,0],nx[n,1],str(n),color=color,size=7)
+# try:
+#     ax.axis(z)
+# except NameError:
+#     pass
+plt.draw()
 
-vc=g.cells_center()
-for c in g.valid_cell_iter():
-    ax.text(vc[c,0],vc[c,1],str(c),color='b')
-nx=g.nodes['x']
-for n in g.valid_node_iter():
-    if g2.nodes['constrained'][n]==C_FIXED:
-        color='r'
-    else:
-        color='b'
-    ax.text(nx[n,0],nx[n,1],str(n),color=color)
+# # 
 
+circ_errs=g_orig.circumcenter_errors()
+print "Original: max circ %f  mean circ %f"%(circ_errs.max(),circ_errs.mean())
 
-print "Original ---"
-g_orig.report_orthogonality()
-print "Updated ---"
-g.report_orthogonality()
+circ_errs=g_perturb.circumcenter_errors()
+print "Perturb: max circ %f  mean circ %f"%(circ_errs.max(),circ_errs.mean())
+
+circ_errs=g.circumcenter_errors()
+print "Updated: max circ %f  mean circ %f"%(circ_errs.max(),circ_errs.mean())
 
 # so we're moving node 1, but the error in cell 4 is
 # increasing??
@@ -526,3 +506,21 @@ g.report_orthogonality()
 # Excellent - the local optimization is working well - can go from the
 # nearly ortho original grid to something well within tolerance with
 # 3 loops.  takes a few seconds.
+
+# Hmm -
+#  so the circum-angle is okay -- hard to really get it dialed in,
+# though with some switching on/off, it gets reasonably close and
+# at least it doesn't appear to have wild local minima - more that
+# it fights a bit with the circumcenter error when things get close
+
+# Some progress - the angle cost was only including 1/3 of the relevant
+# angles.  Fixing that makes it work much better - such that with just
+# the circumcenter cost and the angle cost it can get back to something
+# better than the original grid after 2-3 iterations
+
+# an occasional cangle step is useful for expanding the shapes - i.e.
+# towards some consistency in aspect ratio.
+# works okay to have it as a constant very low level factor, too.
+# this gets the grid down to tolerable errors - max angle error of
+# ~ 1.7deg, mean of 0.35.  and max around 2% circumcenter error.
+# would be nice to be at 0.1deg and 0.1%.

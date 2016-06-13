@@ -37,8 +37,6 @@ for xi,x in enumerate(np.linspace(0,20,5)):
     #stencil.add_node(x=[x,y],ij=[5*x,5])
     n2=stencil.add_node(x=[x+dx,y+dy],ij=[5*x,10])
     #e=stencil.add_edge(nodes=[n1,n2])
-## 
-
 
 # figure out some quads based on proximity in index space
 from matplotlib import tri
@@ -47,6 +45,7 @@ t=tri.Triangulation(x=stencil.nodes['ij'][:,0],
 
 for abc in t.triangles:
     stencil.add_cell(nodes=abc)
+stencil.make_edges_from_cells()
 
 ##     
 nparams=7
@@ -109,7 +108,6 @@ for c in range(stencil.Ncells()):
 
 if 'fit' not in stencil.cells.dtype.names:
     stencil.add_cell_field('fit',fits)
-stencil.make_edges_from_cells()
 ## 
 
 i_samps=np.arange(doms[:,0].min(),doms[:,0].max()+1)
@@ -119,7 +117,7 @@ I=I.ravel()
 J=J.ravel()
 
 patch=unstructured_grid.UnstructuredGrid()
-
+## 
 xform=fwd7(vopt)
 
 for i,j in zip(I,J):
@@ -277,34 +275,249 @@ ax.axis(zoom)
 
 ## 
 # have some triangulation t -
-from scipy.interpolate import LinearNDInterpolator
+from scipy.interpolate import LinearNDInterpolator,CloughTocher2DInterpolator
 pnts=stencil.nodes['ij']
 values=stencil.nodes['x']
 
-interper=LinearNDInterpolator(pnts,values)
+if 0:
+    # does about what you'd expect
+    interper=LinearNDInterpolator(pnts,values)
+else:
+    # nice!
+    interper=CloughTocher2DInterpolator(pnts, values)
+
+
+imin,jmin = stencil.nodes['ij'].min(axis=0)
+imax,jmax = stencil.nodes['ij'].max(axis=0)
 
 patch=unstructured_grid.UnstructuredGrid(extra_node_fields=[('ij','i4',2)])
+
 cn_map= patch.add_rectilinear(p0=[0,0],p1=[1,1],
                               nx=1+imax-imin,ny=1+jmax-jmin)
 
-# # 
-for i,j in np.ndindex(cn_map['nodes'].shape): # zip(I,J):
+for i,j in np.ndindex(cn_map['nodes'].shape):
     n=cn_map['nodes'][i,j]
 
-    ij_dist=(i-stencil.cells['ij'][:,0])**2 + (j-stencil.cells['ij'][:,1])**2
-    if 0:# Choose a cell:
-        c=np.argmin(ij_dist)
-        fit=stencil.cells['fit'][c,:]
-    else: # inverse distance
-        cbest=np.argsort(ij_dist)[:4]
-        weights=(1+ij_dist[cbest])**(-2)
-        weights=weights / weights.sum()
-        fit=(stencil.cells['fit'][cbest,:] * weights[:,None]).sum(axis=0)
-
-    z=fwd7(fit)(i+1j*j)
-    #patch.add_node(x=[np.real(z),np.imag(z)],ij=[i,j])
-    patch.nodes['x'][n]=[np.real(z),np.imag(z)]
     patch.nodes['ij'][n]=[i,j]
+    p_ij=patch.nodes['ij'][n]
+
+    patch.nodes['x'][n]=interper(p_ij[0],p_ij[1])
+
+
+plt.figure(1).clf()
+fig,ax=plt.subplots(1,1,num=1)
+stencil.plot_nodes(labeler=lambda n,rec: "%d,%d"%(rec['ij'][0],rec['ij'][1]))
+stencil.plot_edges().set_color('0.5')
+patch.plot_edges()
+
+ax.axis('equal')
+
+## 
 
 
 
+C_NONE=0 # freely movable
+C_FIXED=1 # static
+g=patch
+g.add_node_field('constrained',np.zeros(g.Nnodes(),'i4'))
+## 
+
+for n in stencil.valid_node_iter():
+    # print( stencil.nodes['ij'][n] )
+    s_ij=stencil.nodes['ij'][n]
+    idx=np.nonzero( (g.nodes['ij'][:,0]==s_ij[0]) & (g.nodes['ij'][:,1]==s_ij[1]) )[0][0]
+    g.nodes['constrained'][idx]=C_FIXED
+## 
+
+movable=g.nodes['constrained']==0
+idx_movable=np.nonzero(movable)[0]
+
+## 
+import time
+import utils
+from scipy.optimize import fmin,fmin_powell
+
+def node_to_triples(g,n,full=True):
+    """ full=False: only include triples with n in the middle
+    """
+    trips=[]
+    cells=g.node_to_cells(n)
+    for c in cells:
+        c_nodes=list(g.cell_to_nodes(c))
+        idx=c_nodes.index(n)
+        N=len(c_nodes)
+        if full:
+            offsets=[-1,0,1]
+        else:
+            offsets=[0]
+        for offset in offsets:
+            trips.append( [c_nodes[(idx-1+offset)%N],
+                           c_nodes[(idx  +offset)%N],
+                           c_nodes[(idx+1+offset)%N] ] )
+    return np.array(trips)
+
+
+# clumping - optimize a single node at a time
+def ncostf(g,n,w_area=0,w_angle=0,w_length=0,w_cangle=0,verbose=0):
+    def modified_node_grid(g_src,n,x):
+        g_test=g_src.copy()
+        g_test.nodes['x'][n]=x
+        g_test.cells_center(refresh=True) # ,mode='sequential')
+        g_test.cells['_area']=np.nan
+        g_test.cells['edges']=g.cells['edges']
+
+        return g_test
+
+    cells=g.node_to_cells(n)
+    edges=[set(g.cell_to_edges(c))
+           for c in cells]
+    edges=list( edges[0].union( *edges[1:] ) )
+    links=[j for j in edges
+           if np.all(g.edges['cells'][j]>0)]
+
+    triples=node_to_triples(g,n)
+
+    if verbose:
+        print "COST: n=%d cells %s  links %s"%(n,cells,links)
+        print "   triples: ",triples
+
+    def cost(x):
+        g_mod=modified_node_grid(g,n,x)
+        # This one sucked:
+        if 0:
+            cost=np.sum([link_cost(g_mod,j)
+                         for j in links])
+
+        # mimic report_orthogonality()
+        cost=0
+        if 1:
+            nsi=4 # quads only right now...
+            centers=g_mod.cells_center(mode='sequential')
+            # this is somehow making the mean and max circumcenter error larger!
+            offsets = g_mod.nodes['x'][g_mod.cells['nodes'][cells,:nsi]] - centers[cells,None,:]
+            dists = utils.mag(offsets)
+
+            # maybe lets small cells take over too much
+            # cost += np.mean( np.std(dists,axis=1) / np.mean(dists,axis=1) )
+            # different, but not much better
+            # cost += np.mean( np.std(dists,axis=1) )
+            base_cost=np.max( np.std(dists,axis=1)  )
+            if verbose:
+                print "   Circum. cost: %f"%(base_cost)
+            cost += base_cost
+            
+        if w_area>0 and len(links):
+            # this helps a bit, but sometimes getting good areas
+            # means distorting the shapes
+            A=g_mod.cells_area()
+            pairs=A[ g.edges['cells'][links] ]
+            diffs=(pairs[:,0]-pairs[:,1])/pairs.mean(axis=1)
+            area_cost=w_area*np.sum(diffs**2)
+            if verbose:
+                print "   Area cost: %f"%area_cost
+            cost+=area_cost
+        if w_length>0:
+            # if it's not too far off, this makes it look nicer at
+            # the expense of circ. errors
+            l_cost=0
+            g_mod.update_cell_edges()
+            lengths=g_mod.edges_length()
+            for c in cells:
+                e=g_mod.cell_to_edges(c)
+                if 0:
+                    # maybe that's too much leeway, and
+                    # the user should have to specify aspect ratios
+                    if len(e)==4:
+                        a,b,c,d=lengths[e]
+                        l_cost+=( ((a-c)/(a+c))**2 +
+                                  ((b-d)/(b+d))**2 )
+                else:
+                    lmean=lengths.mean()
+                    l_cost+= np.sum( (lengths-lmean)**2 )
+            if verbose:
+                print "   Length cost: %f"%( w_length*l_cost )
+            cost+=w_length*l_cost
+        if w_angle>0:
+            # interior angle of cells
+            deltas=np.diff(g_mod.nodes['x'][triples],axis=1)
+            angles=np.diff( np.arctan2( deltas[:,:,1], deltas[:,:,0] ),axis=1) % (2*np.pi) * 180/np.pi
+            angle_cost=w_angle*np.sum( (angles-90)**2 )
+            if verbose:
+                print "   Angle cost: %f"%angle_cost
+            cost+=angle_cost
+        if w_cangle>0:
+            cangle_cost=0
+            for c in cells:
+                nodes=g.cell_to_nodes(c)
+                deltas=g_mod.nodes['x'][nodes] - g_mod.cells_center()[c]
+                angles=np.arctan2(deltas[:,1],deltas[:,0]) * 180/np.pi
+                cds=utils.cdiff(angles) % 360.
+                cangle_cost+=np.sum( (cds-90)**4 )
+            if verbose:
+                print "   CAngle cost: %f"%( w_cangle*cangle_cost )
+            cost+=w_cangle*cangle_cost
+                
+        return cost
+    return cost
+
+
+for it in range(1000):
+    reordered=np.argsort( np.random.random(len(idx_movable)) )
+    for n in idx_movable[reordered]:
+        if g.nodes['ij'][n,0]>20:
+            continue
+        t=time.time()
+        x0=g.nodes['x'][n].copy()
+        costf=ncostf(g,n,w_length=0.0,w_area=0,w_angle=0.1,w_cangle=0.000001)
+        c0=costf(x0)
+        nxopt=fmin(costf,x0,disp=False)
+        copt=costf(nxopt)
+        if copt>c0:
+            print "F",
+        elif copt==c0:
+            print "~",
+        else:
+            g.nodes['x'][n]=nxopt
+            g.cells_center(refresh=True)
+            elapsed=time.time()-t
+            print( "Node=%d elapsed: %.3fs - delta %s, cost delta=%f"%(n,elapsed,nxopt-x0, c0-copt) )
+    plt.figure(1).clf()
+    fig,ax=plt.subplots(1,1,num=1)
+    g.plot_edges()
+    g.plot_nodes(mask=g.nodes['constrained']>0)
+    ax.axis('equal')
+    ax.axis(zoom)
+    print("-"*80)
+    plt.pause(0.1)
+
+            
+
+## 
+plt.figure(1).clf()
+fig,ax=plt.subplots(1,1,num=1)
+stencil.plot_nodes(labeler=lambda n,rec: "%d,%d"%(rec['ij'][0],rec['ij'][1]))
+stencil.plot_edges().set_color('0.5')
+g.plot_edges()
+g.plot_nodes(mask=g.nodes['constrained'])
+
+ax.axis('equal')
+
+
+patch.report_orthogonality()
+
+# And can that be optimized to something reasonably orthogonal?
+# starts off with:
+#    Mean circumcenter error: 0.0953189
+#    Max circumcenter error: 0.342121
+#  Recalculating edge to cells
+#    Mean angle error: 6.96 deg
+#    Max angle error: 69.47 deg
+
+# after one round -
+#   Mean circumcenter error: 0.0591299
+#   Max circumcenter error: 0.4069
+# Recalculating edge to cells
+#   Mean angle error: 4.42 deg
+#   Max angle error: 36.60 deg
+
+# pretty slow - could probably do something multigrid-ish here.

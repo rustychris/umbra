@@ -10,7 +10,8 @@
 #  interpolate that map between groups calculating the intervening
 #  node locations.
 
-
+import time
+import utils
 import unstructured_grid
 import matplotlib.pyplot as plt
 import numpy as np
@@ -271,7 +272,10 @@ stencil.plot_nodes(labeler=lambda n,rec: "%d,%d"%(rec['ij'][0],rec['ij'][1]))
 stencil.plot_edges().set_color('0.5')
 
 ax.axis('equal')
-ax.axis(zoom)
+try:
+    ax.axis(zoom)
+except NameError:
+    pass
 
 ## 
 # have some triangulation t -
@@ -312,30 +316,23 @@ patch.plot_edges()
 
 ax.axis('equal')
 
-## 
-
-
-
 C_NONE=0 # freely movable
 C_FIXED=1 # static
 g=patch
-g.add_node_field('constrained',np.zeros(g.Nnodes(),'i4'))
-## 
+if 'constrained' not in g.nodes.dtype.names:
+    g.add_node_field('constrained',np.zeros(g.Nnodes(),'i4'))
+
 
 for n in stencil.valid_node_iter():
     # print( stencil.nodes['ij'][n] )
     s_ij=stencil.nodes['ij'][n]
     idx=np.nonzero( (g.nodes['ij'][:,0]==s_ij[0]) & (g.nodes['ij'][:,1]==s_ij[1]) )[0][0]
     g.nodes['constrained'][idx]=C_FIXED
-## 
+
 
 movable=g.nodes['constrained']==0
 idx_movable=np.nonzero(movable)[0]
 
-## 
-import time
-import utils
-from scipy.optimize import fmin,fmin_powell
 
 def node_to_triples(g,n,full=True):
     """ full=False: only include triples with n in the middle
@@ -461,7 +458,7 @@ def ncostf(g,n,w_area=0,w_angle=0,w_length=0,w_cangle=0,verbose=0):
     return cost
 
 
-for it in range(1000):
+for it in range(5):
     reordered=np.argsort( np.random.random(len(idx_movable)) )
     for n in idx_movable[reordered]:
         if g.nodes['ij'][n,0]>20:

@@ -229,8 +229,8 @@ def multincostf(g,nodes,verbose=0):
     return costf,x0,modify_grid
 
 # 229 nodes
-nodes_to_optimize=[n for n in idx_movable]
-#                    if 17<g.nodes['ij'][n,0]<40]
+nodes_to_optimize=[n for n in idx_movable
+                   if g.nodes['ij'][n,0]<25]
 
 costf,x0,modify_grid = multincostf(g,nodes_to_optimize)
 
@@ -239,7 +239,7 @@ print("Initial cost: %f"%costf(x0,verbose=True))
 
 c0=costf(x0)
 t=time.time()
-xopt=fmin_powell(costf,x0,disp=False,xtol=0.01,maxiter=15)
+xopt=fmin_powell(costf,x0,disp=False,xtol=0.01,maxiter=4)
 print("Optimized:")
 copt=costf(xopt,verbose=True)
 if copt>c0:
@@ -264,6 +264,96 @@ print("-"*80)
 
 ## 
 
+# reduced basis approach - choose a few nodes, extrapolate movement
+# of other nodes based on the handful chosen
+nsub=[6,33,43,66,76,121,131] # hand-picked, small subset.
+nsub=[66,76,132,142,198,208]
+# nsub=nodes_to_optimize[::40] 
+
+# include bordering, non-optimized nodes, to maintain
+# a smooth transition
+nbrs=[g.node_to_nodes(n)
+      for n in nodes_to_optimize]
+nbrs=np.unique( np.concatenate(nbrs) )
+nbrs=np.setdiff1d(nbrs,nodes_to_optimize)
+
+# generate a matrix which can be multiplied by
+expand=np.zeros( (2*len(nodes_to_optimize),
+                  2*len(nsub)), 'f8')
+
+g=modify_grid(x0)
+
+weighters=np.concatenate( (nsub,nbrs) )
+weightx=g.nodes['x'][weighters]
+
+for ni,n in enumerate(nodes_to_optimize):
+    nx=g.nodes['x'][n]
+    dists=utils.dist(nx-weightx)
+    # something more like the cubic triangulation based
+    # approach above would be better here.
+    weights=(dists+0.00001)**(-3)
+    weights /= weights.sum()
+    # goofy - weights are by node, but applied to coordinates,
+    # so double up
+    weights=weights[:len(nsub)]
+    weights=weights.repeat(2)
+    expand[2*ni]=weights
+    expand[2*ni+1]=weights
+
+def expanded(xin):
+    dxy=np.dot(expand,xin)
+    return x0 + dxy
+
+
+def exp_costf(xin):
+    return costf(expanded(xin))
+
+
+#xin=0.01*np.zeros(2*len(nsub))
+#xexp_opt=fmin_powell(exp_costf,xin,xtol=0.01,maxiter=10)
+#xexp = expanded(xexp_opt)
+g=modify_grid(x0)
+plt.figure(1).clf()
+fig,ax=plt.subplots(1,1,num=1)
+colle=g.plot_edges()
+g.plot_nodes(mask=nsub)
+ax.plot(weightx[:,0],
+        weightx[:,1],'go')
+
+
+
+ax.axis(zoom)
+
+## 
+# can a triangulation of the weighters give better distribution
+# of the influence?
+t2=tri.Triangulation(x=weightx[:,0],
+                     y=weightx[:,1])
+
+# ax.triplot(t2)
+
+# amass the weights for each of the nodes_to_optimize:
+x_to_opt=g.nodes['x'][nodes_to_optimize]
+
+interp_weights=[]
+for i in range(len(nsub)):
+    vals=np.zeros(len(weighters))
+    vals[ weighters==nsub[i] ]=1.0
+    tinterp=tri.LinearTriInterpolator(triangulation=t2,z=vals)
+    # okay - but some nodes fall outside - and get masked.
+    interp_weights.append( tinterp(x_to_opt[:,0],x_to_opt[:,1]) )
+
+
+interp_weights=np.ma.array(interp_weights) # [nsub, nodes_to_optimize]
+
+# a small fraction of those come out nan b/c they aren't within the convex
+# hull of the weighters.
+# as an easy approximation, copy their weights from the nearest node that does
+# have weights
+missing=HERE
+
+
+## 
 angle_errs=180/np.pi * np.abs(g.angle_errors())
 angle_errs[np.isnan(angle_errs)]=0
 circ_errs=g.circum_errors()

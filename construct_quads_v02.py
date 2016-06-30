@@ -345,7 +345,10 @@ def expand_by_linear_tri(ax=None):
     for i in range(len(nsub)):
         vals=np.zeros(len(weighters_and_halo))
         vals[ weighters_and_halo==nsub[i] ]=1.0
-        tinterp=tri.LinearTriInterpolator(triangulation=t2,z=vals)
+        if 0:
+            tinterp=tri.LinearTriInterpolator(triangulation=t2,z=vals)
+        else:
+            tinterp=tri.CubicTriInterpolator(triangulation=t2,z=vals)
         # okay - but some nodes fall outside - and get masked.
         weights.append( tinterp(x_to_opt[:,0],x_to_opt[:,1]) )
         #if i==1:
@@ -406,7 +409,7 @@ def exp_costf(xin):
 # inv_dist copies x coordinates to both x and y output
 
 xin=0.01*np.zeros(2*len(nsub))
-xexp_opt=fmin_powell(exp_costf,xin,xtol=0.01,maxiter=20)
+xexp_opt=fmin_powell(exp_costf,xin,xtol=0.01,maxiter=30)
 #xexp_opt=0*xin
 #xexp_opt[2]=0.0
 xexp = expanded(xexp_opt)

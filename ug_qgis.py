@@ -10,8 +10,6 @@ from qgis import utils
 from PyQt4.QtCore import QVariant, Qt
 from PyQt4.QtGui import QCursor, QPixmap
 
-g=unstructured_grid.SuntansGrid(os.path.join( os.environ['HOME'],"src/umbra/Umbra/sample_data/sfbay/"))
-
 
 class UgQgis(object):
     """
@@ -99,8 +97,8 @@ class UgQgis(object):
 
         self.g.nodes['feat_id'] = [f.id() for f in outFeats]
 
-        if self.direct_edits:
-            layer.geometryChanged.connect(self.on_node_geometry_changed)
+        #if self.direct_edits:
+        #    layer.geometryChanged.connect(self.on_node_geometry_changed)
 
         return res
 
@@ -205,27 +203,34 @@ class UgQgis(object):
             QgsMapLayerRegistry.instance().addMapLayer(layer)
             li.moveLayer(layer,group_index)
 
+        #DBG - this leads to the deletion problem.
+        # without this line, __del__ raises an exception
         li.currentLayerChanged.connect(self.on_layer_changed)
             
         # set extent to the extent of our layer
         # skip while developing
         # canvas.setExtent(layer.extent())
-        
-        self.tool=UgEditTool(canvas,self)
-        canvas.setMapTool(self.tool)
+
+        #DBG:
+        # self.tool=UgEditTool(canvas,self)
+        # canvas.setMapTool(self.tool)
 
     def __del__(self):
-        print "UgQgis deleted"
+        self.log("UgQgis deleted")
         li=self.iface.legendInterface()
         li.currentLayerChanged.disconnect(self.on_layer_changed)
+        self.log("currentLayerChanged callback disconnected")
 
     def on_layer_changed(self,layer):
         if layer is not None:
             # Not sure why, but using layer.id() was triggering an error
-            # about the layer being deleted
+            # about the layer being deleted.  Hmm - this is still somehow
+            # related to an error about the layer being deleted.
+            self.log("About to check names")
             if layer.name()==self.nl.name():
-                # doesn't ever happen
-                print "Setting map tool to ours"
+                # doesn't ever happen - though this is the line pointed to
+                # when the QgsVectorLayer deleted error happens.
+                self.log("Setting map tool to ours")
                 self.iface.mapCanvas().setMapTool(self.tool)
             else:
                 self.log("on_layer_changed, but to id=%s"%layer.name())
@@ -234,6 +239,7 @@ class UgQgis(object):
     def log(self,s):
         with open(os.path.join(os.path.dirname(__file__),'log'),'a') as fp:
             fp.write(s+"\n")
+            fp.flush()
 
 class UgEditTool(QgsMapTool):
     # All geometric edits go through this tool
@@ -262,7 +268,9 @@ class UgEditTool(QgsMapTool):
     #   Cells are toggled with the spacebar or 'c' key, based on current mouse position
 
     def __init__(self, canvas, ug_qgis):
-        QgsMapTool.__init__(self, canvas)
+        assert False # DBG
+        # maybe this is safer??
+        super(UgEditTool,self).__init__(canvas)
         self.canvas = canvas
         self.ug_qgis=ug_qgis
 
@@ -356,6 +364,7 @@ class UgEditTool(QgsMapTool):
     def log(self,s):
         with open(os.path.join(os.path.dirname(__file__),'log'),'a') as fp:
             fp.write(s+"\n")
+            fp.flush()
     
     # def canvasMoveEvent(self, event):
     #     x = event.pos().x()
@@ -419,7 +428,17 @@ class UgEditTool(QgsMapTool):
     def isEditTool(self):
         return True
 
-    
+
+## 
+
+if 1:
+    from delft import dfm_grid
+    dfm_fn=os.path.join( os.environ['HOME'],"models/grids/sfbd-grid-southbay/SFEI_SSFB_fo_dwrbathy_net.nc")
+    g=dfm_grid.DFMGrid(dfm_fn)
+else:
+    g=unstructured_grid.SuntansGrid(os.path.join( os.environ['HOME'],"src/umbra/Umbra/sample_data/sfbay/"))
+
+
 uq=UgQgis(g)
  
 uq.populate_all(utils.iface)
@@ -430,18 +449,44 @@ uq.populate_all(utils.iface)
 # more involved editing modes: 
 #   drawing polygons in the cell layer to then match and/or create nodes/edges on demand.
 
-# keep as a standalone script for a while - much easier to develop than plugin.
+# getting a python exception - 
+# "RuntimeError: wrapped C/C++ object of type QgsVectorLayer has been deleted"
 
-# invoke this in the python console as:
-# ug_qgis.uq.populate_all(iface)
+# this is a PyQt error, it seems.  can be a problem with __init__ not being called
+# in a derived class? (http://stackoverflow.com/questions/17914960/pyqt-runtimeerror-wrapped-c-c-object-has-been-deleted)
+# the posts are about widgets, not QGIS layers.  but the common thread is that 
+# some of the PyQt interfaces take ownership of the objects, and will handle deleting
+# them, but then python might be deleting them, too?
+# for QgsVectorLayer, is there any option to pass a better "owner" object?
+# the minor change to having UgEditTool call super instead of explicit parent
+# made no difference.
+
+# What if it's the tool, or somebody getting events, who failed to deregister?
+# disabling the maptool -
+# no errors on first load...
+# but still get error on reload.
+# could be line 207, though.
+# yep.
+
+# maybe the problem is that the callback is enough to keep the instance
+# alive, so we can never delete it.  some people claim that this is not an
+# issue.
+ 
+# may not be great that UgEditTool has a reference to ug_qgis, but 
+# the error appears even when UgEditTool isn't used
+
+# what about including the connect, then manually call del?
+# the del part worked okay - successfully gets to the disconnected message.
+# and reload(ug_qgis) worked, no errors.
+# then do it again, but without calling __del__ - and it fails!
+
+# so somebody is keeping ug_qgis alive.
+# it's possible that during the reload, things are deleted in a haphazard
+# order?
+
+
 
 # Editing design:
-#   Option A: edits go through the respective layers.
-#    -- less custom machinery
-#    -- mostly just wiring up the modification events to percolate from one
-#       layer to the others
-#    -- no extra work on the UI side
-
 #   Option B: edits go through an view/controller which forwards
 #     the modifications to the layers via the grid.
 #    -- more flexible

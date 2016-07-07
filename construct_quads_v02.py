@@ -159,9 +159,6 @@ def node_to_triples(g,n,full=True):
     return np.array(trips)
 
 
-
-            
-
 ## 
 
 # use the angles, but do chunks of nodes at a time
@@ -277,8 +274,8 @@ zoom=(-0.81531300962113595,
 # reduced basis approach - choose a few nodes, extrapolate movement
 # of other nodes based on the handful chosen
 nsub=[6,33,43,66,76,121,131] # hand-picked, small subset.
-nsub=[66,76,132,142,198,208]
-# nsub=nodes_to_optimize[::40] 
+nsub=[55,65,88,98,132,142,198,208] 
+# nsub=nodes_to_optimize[::18] 
 
 # include bordering, non-optimized nodes, to maintain
 # a smooth transition
@@ -345,7 +342,7 @@ def expand_by_linear_tri(ax=None):
     for i in range(len(nsub)):
         vals=np.zeros(len(weighters_and_halo))
         vals[ weighters_and_halo==nsub[i] ]=1.0
-        if 0:
+        if 1:
             tinterp=tri.LinearTriInterpolator(triangulation=t2,z=vals)
         else:
             tinterp=tri.CubicTriInterpolator(triangulation=t2,z=vals)
@@ -368,31 +365,6 @@ def expand_by_linear_tri(ax=None):
         for i,xy in enumerate(x_to_opt):
             ax.text( xy[0],xy[1],str(i),color='r')
                      
-    
-    # a small fraction of those come out nan b/c they aren't within the convex
-    # hull of the weighters.
-    # as an easy approximation, copy their weights from the nearest node that does
-    # have weights
-    # no, probably better to put some some far-field points in
-    
-    # missing=np.nonzero(weights.mask[0,:])[0]
-    # print missing
-    # present_nodes=np.array(nodes_to_optimize)[~missing]
-    # 
-    # for m_idx in missing:
-    #     n_idx=nodes_to_optimize[m_idx]
-    #     dists=utils.dist( g.nodes['x'][present_nodes] - g.nodes['x'][n_idx] )
-    #     nto_idx=np.arange(len(nodes_to_optimize))[~missing][np.argmin(dists)]
-    # 
-    #     if 1: # a little sanity check --
-    #         # this would give the original grid index of the node
-    #         best_node=present_nodes[np.argmin(dists)]
-    #         # but instead, I want to know where it falls in nodes_to_optimize
-    #         assert best_node==nodes_to_optimize[nto_idx]
-    # 
-    #     weights[:,m_idx] = weights[:,nto_idx]
-
-    # weights=weights.repeat(2,0).repeat(2,1).T
     return expand_1d_to_2d(weights.T)
 
 g=modify_grid(x0)
@@ -409,7 +381,7 @@ def exp_costf(xin):
 # inv_dist copies x coordinates to both x and y output
 
 xin=0.01*np.zeros(2*len(nsub))
-xexp_opt=fmin_powell(exp_costf,xin,xtol=0.01,maxiter=30)
+xexp_opt=fmin_powell(exp_costf,xin,xtol=0.01,maxiter=50)
 #xexp_opt=0*xin
 #xexp_opt[2]=0.0
 xexp = expanded(xexp_opt)

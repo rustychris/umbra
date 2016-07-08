@@ -1,0 +1,12 @@
+with backrefs, max_depth=5, see more of the picture.
+
+vector layer is referenced in locals, fine, but mostly
+the dict behind UgQgis.
+That dict also references, via self.tool, the UgEditTool.
+UgEditTool in turn references UgQgis, so there's a cycle there,
+not great.
+
+On top of that, QgsMapCanvas holds a reference to the tool.
+And that is probably bad - because MapCanvas will continue to
+call any callbacks.
+

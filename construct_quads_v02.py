@@ -12,6 +12,7 @@
 from __future__ import print_function
 import time
 import utils
+import pdb
 import plot_utils
 import unstructured_grid
 import matplotlib.pyplot as plt
@@ -158,9 +159,6 @@ def node_to_triples(g,n,full=True):
     return np.array(trips)
 
 
-
-            
-
 ## 
 
 # use the angles, but do chunks of nodes at a time
@@ -229,17 +227,17 @@ def multincostf(g,nodes,verbose=0):
     return costf,x0,modify_grid
 
 # 229 nodes
-nodes_to_optimize=[n for n in idx_movable]
-#                    if 17<g.nodes['ij'][n,0]<40]
+nodes_to_optimize=[n for n in idx_movable
+                   if g.nodes['ij'][n,0]<25]
 
-costf,x0,modify_grid = multincostf(g,nodes_to_optimize)
+# costf,x0,modify_grid = multincostf(g,nodes_to_optimize)
 
 print("Initial cost: %f"%costf(x0,verbose=True))
 
 
 c0=costf(x0)
 t=time.time()
-xopt=fmin_powell(costf,x0,disp=False,xtol=0.01,maxiter=15)
+xopt=fmin_powell(costf,x0,disp=False,xtol=0.01,maxiter=4)
 print("Optimized:")
 copt=costf(xopt,verbose=True)
 if copt>c0:
@@ -253,17 +251,173 @@ else:
     g.cells_center(refresh=True)
     elapsed=time.time()-t
     print( "Elapsed: %.3fs - cost delta=%f"%(elapsed,c0-copt) )
-
+    
+## 
 plt.figure(1).clf()
 fig,ax=plt.subplots(1,1,num=1)
 g.plot_edges()
 g.plot_nodes(mask=g.nodes['constrained']>0)
 ax.axis('equal')
-ax.axis(zoom)
+try:
+    ax.axis(zoom)
+except NameError:
+    pass
 print("-"*80)
 
 ## 
 
+zoom=(-0.81531300962113595,
+      6.2923657070774617,
+      -0.37078323300472316,
+      7.1762028852923372)
+
+# reduced basis approach - choose a few nodes, extrapolate movement
+# of other nodes based on the handful chosen
+nsub=[6,33,43,66,76,121,131] # hand-picked, small subset.
+nsub=[55,65,88,98,132,142,198,208] 
+# nsub=nodes_to_optimize[::18] 
+
+# include bordering, non-optimized nodes, to maintain
+# a smooth transition
+nbrs=[g.node_to_nodes(n)
+      for n in nodes_to_optimize]
+nbrs=np.unique( np.concatenate(nbrs) )
+nbrs=np.setdiff1d(nbrs,nodes_to_optimize)
+
+g=modify_grid(x0)
+
+weighters=np.concatenate( (nsub,nbrs) )
+weightx=g.nodes['x'][weighters]
+
+
+def expand_1d_to_2d(expand):
+    """ 
+    for node:node weights, double each dimension
+    to handle x,y
+    """
+    expand=expand.repeat(2,0).repeat(2,1)
+    expand[::2,1::2]=0
+    expand[1::2,::2]=0
+    return expand
+    
+def expand_by_inv_dist():
+    # generate a matrix which can be multiplied by
+    expand=np.zeros( (len(nodes_to_optimize),
+                      len(nsub)), 'f8')
+
+    for ni,n in enumerate(nodes_to_optimize):
+        nx=g.nodes['x'][n]
+        dists=utils.dist(nx-weightx)
+        # something more like the cubic triangulation based
+        # approach above would be better here.
+        weights=(dists+0.00001)**(-3)
+        weights /= weights.sum()
+        # goofy - weights are by node, but applied to coordinates,
+        # so double up
+        expand[ni]=weights[:len(nsub)]
+    
+    return expand_1d_to_2d(expand)
+
+def expand_by_linear_tri(ax=None):
+    # can a triangulation of the weighters give better distribution
+    # of the influence?
+
+    xmin,ymin=weightx.min(axis=0)
+    xmax,ymax=weightx.max(axis=0)
+    dx=xmax-xmin
+    dy=ymax-ymin
+    halo = np.array( [ [xmin-10*dx,ymin-10*dy],
+                       [xmin-10*dx,ymax+10*dy],
+                       [xmax+10*dx,ymin-10*dy],
+                       [xmax+10*dy,ymax+10*dy] ] )
+    weightx_and_halo = np.concatenate( [weightx,halo] )
+    weighters_and_halo=np.concatenate( [weighters,[-1]*4] )
+    t2=tri.Triangulation(x=weightx_and_halo[:,0],
+                         y=weightx_and_halo[:,1])
+
+    # amass the weights for each of the nodes_to_optimize:
+    x_to_opt=g.nodes['x'][nodes_to_optimize]
+
+    weights=[]
+    for i in range(len(nsub)):
+        vals=np.zeros(len(weighters_and_halo))
+        vals[ weighters_and_halo==nsub[i] ]=1.0
+        if 1:
+            tinterp=tri.LinearTriInterpolator(triangulation=t2,z=vals)
+        else:
+            tinterp=tri.CubicTriInterpolator(triangulation=t2,z=vals)
+        # okay - but some nodes fall outside - and get masked.
+        weights.append( tinterp(x_to_opt[:,0],x_to_opt[:,1]) )
+        #if i==1:
+        #    # at this point weights[-1][63] is 0.83 -
+        #    # reasonable!
+        #    pdb.set_trace()
+
+    weights=np.ma.array(weights) # [nsub, nodes_to_optimize]
+
+    assert weights.mask.sum() == 0
+    weights=np.array(weights)
+
+    if ax:
+        ax.triplot(t2)
+        for i,xy in enumerate(weightx_and_halo):
+            ax.text( xy[0],xy[1],str(i))
+        for i,xy in enumerate(x_to_opt):
+            ax.text( xy[0],xy[1],str(i),color='r')
+                     
+    return expand_1d_to_2d(weights.T)
+
+g=modify_grid(x0)
+expand=expand_by_linear_tri()
+# expand=expand_by_inv_dist()
+
+def expanded(xin):
+    dxy=np.dot(expand,xin)
+    return x0 + dxy
+
+def exp_costf(xin):
+    return costf(expanded(xin))
+
+# inv_dist copies x coordinates to both x and y output
+
+xin=0.01*np.zeros(2*len(nsub))
+xexp_opt=fmin_powell(exp_costf,xin,xtol=0.01,maxiter=50)
+#xexp_opt=0*xin
+#xexp_opt[2]=0.0
+xexp = expanded(xexp_opt)
+
+g=modify_grid(xexp)
+plt.figure(1).clf()
+fig,ax=plt.subplots(1,1,num=1)
+colle=g.plot_edges()
+g.plot_nodes(mask=nsub)
+#ax.plot(weightx[:,0],
+#        weightx[:,1],'go')
+
+# expand_by_linear_tri(ax)
+
+# something wrong with the linear tri weights
+base_weights=expand[::2,::2]
+
+# show that the ones out side the convex hull
+# have low-ish weights - is something doubled up?
+#ax.scatter(g.nodes['x'][nodes_to_optimize,0],
+#           g.nodes['x'][nodes_to_optimize,1],
+#           50,base_weights[:,1],lw=0)
+
+ax.axis(zoom)
+
+# one of the control points is 74 in nodes_to_optimize, and
+# which is node 76.
+# its neighbor to the west is index 63 in nodes_to_optimize, or
+# node 65.
+if 0:
+    for ni,n in enumerate(nodes_to_optimize):
+        ax.text( g.nodes['x'][n,0],
+                 g.nodes['x'][n,1],
+                 "[%d] %d]"%(ni,n))
+
+## 
 angle_errs=180/np.pi * np.abs(g.angle_errors())
 angle_errs[np.isnan(angle_errs)]=0
 circ_errs=g.circum_errors()

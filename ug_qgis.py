@@ -24,10 +24,10 @@ class UgQgis(object):
         g.add_cell_field('feat_id',np.zeros(g.Ncells(),'i4')-1)
 
         # install grid callbacks:
-        g.subscribe_after('modify_node',self.on_modify_node)
-        g.subscribe_after('add_node',self.on_add_node)
-
-        g.subscribe_after('add_edge',self.on_add_edge)
+        if 1: # re-enabled. DBG - temp. disabled
+            g.subscribe_after('modify_node',self.on_modify_node)
+            g.subscribe_after('add_node',self.on_add_node)
+            g.subscribe_after('add_edge',self.on_add_edge)
         return g
 
     direct_edits=False # edits come through map tool
@@ -156,12 +156,29 @@ class UgQgis(object):
         return res
 
     def clear_layers(self,canvas):
-        # bad code - just for dev
-        # could use some code like 
-        # layers = QgsMapLayerRegistry.instance().mapLayersByName('my_line')
+        # more for development - clear out old layers
         lr=QgsMapLayerRegistry.instance()
         layers=lr.mapLayers()
-        lr.removeMapLayers( layers.keys() )
+        to_remove=[]
+        for layer_key in layers.keys():
+            if ( layer_key.startswith('edges') or
+                 layer_key.startswith('cells') or
+                 layer_key.startswith('nodes') ):
+                to_remove.append(layer_key)
+        lr.removeMapLayers( to_remove )
+
+    def on_node_layer_deleted(self):
+        self.nl=None
+        self.log("signal received: node layer deleted")
+        # to avoid confusion, let the node layer removal trigger
+        # everything, at least for now.  
+        self.graceful_deactivate()
+    def on_edge_layer_deleted(self):
+        self.el=None
+        self.log("signal received: edge layer deleted")
+    def on_cell_layer_deleted(self):
+        self.cl=None
+        self.log("signal received: cell layer deleted")
 
     # create the memory layers and populate accordingly
     def populate_all(self,iface):
@@ -174,6 +191,10 @@ class UgQgis(object):
         self.nl = QgsVectorLayer("Point"+crs, "nodes", "memory")
         self.el = QgsVectorLayer("LineString"+crs,"edges","memory")
         self.cl = QgsVectorLayer("Polygon"+crs,"cells","memory")
+
+        self.nl.layerDeleted.connect(self.on_node_layer_deleted)
+        self.el.layerDeleted.connect(self.on_edge_layer_deleted)
+        self.cl.layerDeleted.connect(self.on_cell_layer_deleted)
 
         pr = self.el.dataProvider()
 
@@ -211,15 +232,21 @@ class UgQgis(object):
         # skip while developing
         # canvas.setExtent(layer.extent())
 
-        #DBG:
-        # self.tool=UgEditTool(canvas,self)
-        # canvas.setMapTool(self.tool)
+        self.tool=UgEditTool(canvas,self)
+        canvas.setMapTool(self.tool)
 
-    def __del__(self):
-        self.log("UgQgis deleted")
+    def graceful_deactivate(self):
+        self.log("UgQgis deactivating")
         li=self.iface.legendInterface()
         li.currentLayerChanged.disconnect(self.on_layer_changed)
         self.log("currentLayerChanged callback disconnected")
+        # remove map tool from the canvas
+        canvas=self.iface.mapCanvas()
+        if canvas.mapTool() == self.tool:
+            self.log("active map tool is ours - how to remove??")
+            self.tool=None
+        # remove callbacks from the grid:
+        self.log("Not ready for removing callbacks from the grid")
 
     def on_layer_changed(self,layer):
         if layer is not None:
@@ -268,7 +295,6 @@ class UgEditTool(QgsMapTool):
     #   Cells are toggled with the spacebar or 'c' key, based on current mouse position
 
     def __init__(self, canvas, ug_qgis):
-        assert False # DBG
         # maybe this is safer??
         super(UgEditTool,self).__init__(canvas)
         self.canvas = canvas
@@ -431,7 +457,7 @@ class UgEditTool(QgsMapTool):
 
 ## 
 
-if 1:
+if 0:
     from delft import dfm_grid
     dfm_fn=os.path.join( os.environ['HOME'],"models/grids/sfbd-grid-southbay/SFEI_SSFB_fo_dwrbathy_net.nc")
     g=dfm_grid.DFMGrid(dfm_fn)
@@ -471,7 +497,7 @@ uq.populate_all(utils.iface)
 # maybe the problem is that the callback is enough to keep the instance
 # alive, so we can never delete it.  some people claim that this is not an
 # issue.
- 
+
 # may not be great that UgEditTool has a reference to ug_qgis, but 
 # the error appears even when UgEditTool isn't used
 
@@ -484,6 +510,17 @@ uq.populate_all(utils.iface)
 # it's possible that during the reload, things are deleted in a haphazard
 # order?
 
+# grabbed references, el, cl, nl, in the console, then reloaded...
+# got 3 reference errors...
+# looking at gc.get_referrers() of the existing 
+# old node layer had one more reference than the others (3 vs 2)
+# each had the same first referrer and second referrer
+# first referrer - locals()
+# second referrer is the dict of the UgQgis object (something with
+# el,iface,nl,g, and cl.
+# last reference is a frame object.
+
+# maybe related to on_add_edge, on_add_node, on_modify_node ?
 
 
 # Editing design:
@@ -495,3 +532,49 @@ uq.populate_all(utils.iface)
 
 # better to go with the maptool approach, like here:
 # http://gis.stackexchange.com/questions/45094/how-to-programatically-check-for-a-mouse-click-in-qgis
+
+# Without creating the edittool, still get the error.
+# backrefs: 
+#  there is the locals reference, and
+#  then the  UgQgis object, which is 
+#  referenced from the on_add_node, on_modify_node, on_add_edge
+#   methods.
+#  who is holding a reference to the grid, though?
+#  there is a big cycle with UgQgis, the grid, and the callbacks.
+# so what if the callbacks retain only weak references?
+#  for starters, does it fix the problem to avoid the callbacks?
+#  => yes.
+#   i.e., if I drop the EditTool and the g.subscribe_* calls, but the
+#     on_layer_changed callback is still active, then reloading
+#     does not cause a problem, and the only remaining reference to nl is
+#     via locals.
+#   what about if the EditTool is put back in?
+#     then I get the error again.  Seems that either of the edittool or
+#     the grid callbacks are enough to screw the pooch.
+#     objgraph shows the cycle with tool.ug_qgis.tool == tool
+#     there is a second cycle with tool.canvas.
+
+
+# what are the ways out of this?
+#   potentially two separate issues which keep the object alive and
+#   receiving signals.
+# 1. callbacks from the grid
+# 2. cyclic references between UgQgis and UgEditTool.
+
+# Callbacks from the grid could probably be mitigated by keeping just
+# a weak reference to the callback (but being a little smart in case 
+# the callback is a lambda??)
+
+# re the UgQgis issue - what about watching for the layer to be removed,
+# and handling a nicer removal in that case?
+
+# is there a signal, either from the maplayerregistry or the layers themselves
+# which we can connect to and find out when the layers are removed?
+# there is layerDeleted - seems to work.
+
+# okay - so watching for layerDeleted, and when the node layer is deleted
+# we remove the callback for layerChanged, that seems to be solid.
+# still have the grid callbacks disabled, though.
+
+# adding the callbacks back in, seems to be okay.
+

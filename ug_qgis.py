@@ -1,4 +1,6 @@
 import unstructured_grid
+import utils
+
 import numpy as np
 from collections import defaultdict
 import os
@@ -6,9 +8,15 @@ import os
 from qgis.core import ( QgsGeometry, QgsPoint, QgsFeature,QgsVectorLayer, QgsField,
                         QgsMapLayerRegistry, QgsFeatureRequest )
 from qgis.gui import QgsMapTool
-from qgis import utils
+import qgis.utils 
 from PyQt4.QtCore import QVariant, Qt
 from PyQt4.QtGui import QCursor, QPixmap
+
+def dist(a,b=None):
+    if b is None:
+        b=(a*0)
+    return np.sqrt(np.sum((a-b)**2,axis=-1))
+
 
 
 class UgQgis(object):
@@ -17,7 +25,29 @@ class UgQgis(object):
     """
     def __init__(self,g):
         self.g = self.extend_grid(g)
+        self.install_edge_quality()
 
+    def install_edge_quality(self):
+        if 'edge_quality' not in self.g.edges.dtype.names:
+            edge_q=np.zeros(self.g.Nedges(),'f8')
+            self.g.add_edge_field('edge_quality',edge_q)
+            self.update_edge_quality()
+
+    def update_edge_quality(self,edges=None):
+        if edges is None:
+            edges=slice(None)
+        g=self.g
+        vc=g.cells_center()
+        ec=g.edges_center()
+        g.edge_to_cells()
+
+        c2c =utils.dist( vc[g.edges['cells'][edges,0]] - vc[g.edges['cells'][edges,1]] )
+        A=g.cells_area()
+        Acc= A[g.edges['cells'][edges,:]].sum(axis=1)
+        c2c=c2c / np.sqrt(Acc) # normalized
+        c2c[ np.any(g.edges['cells'][edges,:]<0,axis=1) ] = np.inf
+        g.edges['edge_quality'][edges]=c2c
+        
     def extend_grid(self,g):
         g.add_node_field('feat_id',np.zeros(g.Nnodes(),'i4')-1)
         g.add_edge_field('feat_id',np.zeros(g.Nedges(),'i4')-1)
@@ -28,6 +58,7 @@ class UgQgis(object):
             g.subscribe_after('modify_node',self.on_modify_node)
             g.subscribe_after('add_node',self.on_add_node)
             g.subscribe_after('add_edge',self.on_add_edge)
+
         return g
 
     direct_edits=False # edits come through map tool
@@ -124,10 +155,27 @@ class UgQgis(object):
         for j in self.g.valid_edge_iter():
             geom=self.edge_geometry(j)
             feat = QgsFeature()
-            feat.initAttributes(4)
-            feat.setAttribute(0,j) 
-            # QGIS doesn't know about numpy types
-            feat.setAttribute(3,int(self.g.edges['mark'][j]))
+            feat.initAttributes(len(self.e_attrs))
+            for idx,eattr in enumerate(self.e_attrs):
+                if j==0:
+                    self.log("j=%d  idx=%d eattr=%s"%(j,idx,eattr))
+                name=eattr.name()
+                typecode=eattr.type()
+                if name=='edge_id':
+                    feat.setAttribute(idx,j) 
+                elif name=='c0':
+                    feat.setAttribute(idx,int(self.g.edges['cells'][j,0]))
+                elif name=='c1':
+                    feat.setAttribute(idx,int(self.g.edges['cells'][j,1]))
+                elif typecode==2: # integer
+                    feat.setAttribute(idx,int(self.g.edges[name][j]))
+                elif typecode==6: # double
+                    feat.setAttribute(idx,float(self.g.edges[name][j]))
+                else:
+                    continue
+                # QGIS doesn't know about numpy types
+            
+            # feat.setAttribute(3,int(self.g.edges['mark'][j]))
             feat.setGeometry(geom)
             feats.append(feat)
         (res, outFeats) = layer.dataProvider().addFeatures(feats)
@@ -199,10 +247,31 @@ class UgQgis(object):
         pr = self.el.dataProvider()
 
         # add fields - eventually would be tied in with g.edge_dtype
-        pr.addAttributes([QgsField("edge_id",QVariant.Int),
-                          QgsField("c0", QVariant.Int),
-                          QgsField("c1",  QVariant.Int),
-                          QgsField("mark", QVariant.Int)])
+        e_attrs=[QgsField("edge_id",QVariant.Int)]
+
+        for fidx,fdesc in enumerate(self.g.edge_dtype.descr):
+            # descr gives string reprs of the types, use dtype
+            # to get back to an object.
+            fname=fdesc[0] ; ftype=np.dtype(fdesc[1])
+            if len(fdesc)>2:
+                fshape=fdesc[2]
+            else:
+                fshape=None
+
+            if fname=='nodes':
+                continue
+            elif fname=='cells':
+                e_attrs += [QgsField("c0", QVariant.Int),
+                            QgsField("c1", QVariant.Int)]
+            else:
+                if np.issubdtype(ftype,np.int):
+                    e_attrs.append( QgsField(fname,QVariant.Int) )
+                elif np.issubdtype(ftype,np.float):
+                    e_attrs.append( QgsField(fname,QVariant.Double) )
+                else:
+                    self.log("Not read other datatypes")
+        self.e_attrs=e_attrs            
+        pr.addAttributes(e_attrs)
         self.el.updateFields() # tell the vector layer to fetch changes from the provider
 
         self.populate_nodes()
@@ -457,7 +526,7 @@ class UgEditTool(QgsMapTool):
 
 ## 
 
-if 0:
+if 1:
     from delft import dfm_grid
     dfm_fn=os.path.join( os.environ['HOME'],"models/grids/sfbd-grid-southbay/SFEI_SSFB_fo_dwrbathy_net.nc")
     g=dfm_grid.DFMGrid(dfm_fn)
@@ -467,7 +536,7 @@ else:
 
 uq=UgQgis(g)
  
-uq.populate_all(utils.iface)
+uq.populate_all(qgis.utils.iface)
  
  
 # Next:
@@ -577,4 +646,7 @@ uq.populate_all(utils.iface)
 # still have the grid callbacks disabled, though.
 
 # adding the callbacks back in, seems to be okay.
+
+# Next: calculate a grid quality metric (e.g. relative cell-cell spacing)
+# and have that as a live attribute for the features.
 

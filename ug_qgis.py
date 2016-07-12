@@ -34,6 +34,7 @@ class UgQgis(object):
             self.update_edge_quality()
 
     def update_edge_quality(self,edges=None):
+        # First part is calculating the values
         if edges is None:
             edges=slice(None)
         g=self.g
@@ -73,22 +74,48 @@ class UgQgis(object):
                 geom=self.node_geometry(n)
                 self.nl.dataProvider().changeGeometryValues({fid:geom})
                 self.nl.triggerRepaint()
-            
-            edge_changes={}
-            for j in self.g.node_to_edges(n):
-                fid=self.g.edges[j]['feat_id']
-                geom=self.edge_geometry(j)
-                edge_changes[fid]=geom
-            self.el.dataProvider().changeGeometryValues(edge_changes)
-            self.el.triggerRepaint()
 
+            # update cells first, so that edge_quality has fresh
+            # cell center and area information
             cell_changes={}
-            for i in self.g.node_to_cells(n):
+            cells=self.g.node_to_cells(n)
+            self.g.cells_center(refresh=cells)
+            self.g.cells['_area'][cells]=np.nan # trigger recalc.
+            cell_edges=set()
+            for i in cells:
                 fid=self.g.nodes[i]['feat_id']
                 geom=self.cell_geometry(i)
                 cell_changes[fid]=geom
+                cell_edges.update(self.g.cell_to_edges(i))
             self.cl.dataProvider().changeGeometryValues(cell_changes)
             self.cl.triggerRepaint()
+                
+            edge_geom_changes={}
+            # edge centers are not cached at this point, so don't
+            # need to update them...
+            for j in self.g.node_to_edges(n):
+                fid=self.g.edges[j]['feat_id']
+                geom=self.edge_geometry(j)
+                edge_geom_changes[fid]=geom
+            self.el.dataProvider().changeGeometryValues(edge_geom_changes)
+
+            # Edges for which a node or cell has changed:
+            # this doesn't seem to be working now.
+            edge_attr_changes={}
+            edge_quality_idx=[i
+                              for i,attr in enumerate(self.e_attrs)
+                              if attr.name()=='edge_quality'][0]
+            js=list(cell_edges)
+            self.update_edge_quality(js)
+            for j in js:
+                # and update edge quality field - would be nice
+                # to come up with a nice abstraction here...
+                fid=self.g.edges[j]['feat_id']
+                edge_attr_changes[fid]={edge_quality_idx:float(self.g.edges[j]['edge_quality'])}
+            self.el.dataProvider().changeAttributeValues(edge_attr_changes)
+
+            self.el.triggerRepaint()
+
 
     def on_add_node(self,g,func_name,return_value,**k):
         n=return_value
@@ -157,8 +184,6 @@ class UgQgis(object):
             feat = QgsFeature()
             feat.initAttributes(len(self.e_attrs))
             for idx,eattr in enumerate(self.e_attrs):
-                if j==0:
-                    self.log("j=%d  idx=%d eattr=%s"%(j,idx,eattr))
                 name=eattr.name()
                 typecode=eattr.type()
                 if name=='edge_id':
@@ -293,8 +318,8 @@ class UgQgis(object):
             QgsMapLayerRegistry.instance().addMapLayer(layer)
             li.moveLayer(layer,group_index)
 
-        #DBG - this leads to the deletion problem.
-        # without this line, __del__ raises an exception
+        # if this is omitted, be sure to also skip over
+        # the disconnects.
         li.currentLayerChanged.connect(self.on_layer_changed)
             
         # set extent to the extent of our layer
@@ -324,10 +349,10 @@ class UgQgis(object):
             # related to an error about the layer being deleted.
             self.log("About to check names")
             if layer.name()==self.nl.name():
-                # doesn't ever happen - though this is the line pointed to
-                # when the QgsVectorLayer deleted error happens.
+                # this happens, but doesn't seem to succeed
                 self.log("Setting map tool to ours")
                 self.iface.mapCanvas().setMapTool(self.tool)
+                self.log("Done with setting map tool to ours")
             else:
                 self.log("on_layer_changed, but to id=%s"%layer.name())
                 self.log("My node name=%s"%self.nl.name())
@@ -355,7 +380,7 @@ class UgEditTool(QgsMapTool):
     # with key modifiers, and should not interfere with panning or zooming the canvas
 
     # Scheme 1:
-    #   Click and drag moves a node
+    #   Click and drag moves a node - done
     #   Shift engages edge operations:
     #     shift-click starts drawing edges, with nodes selected or created based on radius
     #     so you can draw a linked bunch of edges by holding down shift and clicking along the path
@@ -512,7 +537,7 @@ class UgEditTool(QgsMapTool):
         self.canvas.setCursor(self.cursor)
 
     def deactivate(self):
-        print "inactive"
+        self.log("inactive")
 
     def isZoomTool(self):
         return False
@@ -544,54 +569,6 @@ uq.populate_all(qgis.utils.iface)
 # more involved editing modes: 
 #   drawing polygons in the cell layer to then match and/or create nodes/edges on demand.
 
-# getting a python exception - 
-# "RuntimeError: wrapped C/C++ object of type QgsVectorLayer has been deleted"
-
-# this is a PyQt error, it seems.  can be a problem with __init__ not being called
-# in a derived class? (http://stackoverflow.com/questions/17914960/pyqt-runtimeerror-wrapped-c-c-object-has-been-deleted)
-# the posts are about widgets, not QGIS layers.  but the common thread is that 
-# some of the PyQt interfaces take ownership of the objects, and will handle deleting
-# them, but then python might be deleting them, too?
-# for QgsVectorLayer, is there any option to pass a better "owner" object?
-# the minor change to having UgEditTool call super instead of explicit parent
-# made no difference.
-
-# What if it's the tool, or somebody getting events, who failed to deregister?
-# disabling the maptool -
-# no errors on first load...
-# but still get error on reload.
-# could be line 207, though.
-# yep.
-
-# maybe the problem is that the callback is enough to keep the instance
-# alive, so we can never delete it.  some people claim that this is not an
-# issue.
-
-# may not be great that UgEditTool has a reference to ug_qgis, but 
-# the error appears even when UgEditTool isn't used
-
-# what about including the connect, then manually call del?
-# the del part worked okay - successfully gets to the disconnected message.
-# and reload(ug_qgis) worked, no errors.
-# then do it again, but without calling __del__ - and it fails!
-
-# so somebody is keeping ug_qgis alive.
-# it's possible that during the reload, things are deleted in a haphazard
-# order?
-
-# grabbed references, el, cl, nl, in the console, then reloaded...
-# got 3 reference errors...
-# looking at gc.get_referrers() of the existing 
-# old node layer had one more reference than the others (3 vs 2)
-# each had the same first referrer and second referrer
-# first referrer - locals()
-# second referrer is the dict of the UgQgis object (something with
-# el,iface,nl,g, and cl.
-# last reference is a frame object.
-
-# maybe related to on_add_edge, on_add_node, on_modify_node ?
-
-
 # Editing design:
 #   Option B: edits go through an view/controller which forwards
 #     the modifications to the layers via the grid.
@@ -602,51 +579,19 @@ uq.populate_all(qgis.utils.iface)
 # better to go with the maptool approach, like here:
 # http://gis.stackexchange.com/questions/45094/how-to-programatically-check-for-a-mouse-click-in-qgis
 
-# Without creating the edittool, still get the error.
-# backrefs: 
-#  there is the locals reference, and
-#  then the  UgQgis object, which is 
-#  referenced from the on_add_node, on_modify_node, on_add_edge
-#   methods.
-#  who is holding a reference to the grid, though?
-#  there is a big cycle with UgQgis, the grid, and the callbacks.
-# so what if the callbacks retain only weak references?
-#  for starters, does it fix the problem to avoid the callbacks?
-#  => yes.
-#   i.e., if I drop the EditTool and the g.subscribe_* calls, but the
-#     on_layer_changed callback is still active, then reloading
-#     does not cause a problem, and the only remaining reference to nl is
-#     via locals.
-#   what about if the EditTool is put back in?
-#     then I get the error again.  Seems that either of the edittool or
-#     the grid callbacks are enough to screw the pooch.
-#     objgraph shows the cycle with tool.ug_qgis.tool == tool
-#     there is a second cycle with tool.canvas.
 
+# Fix the issue of map tool getting unset.
+#   manually calling iface.mapCanvas().setMapTool(ug_qgis.uq.tool)
+#   does work.
+#  when selecting a layer - get Setting map tool to ours, inactive, active, inactive. wtf?
+#  the first inactive has weird timing.  Last inactive occurs after 'Done with setting map tool
+#   to ours'.
+# maybe there is some setting of the canvas which is automatically setting it back
+# to whatever is highlighted?  It's getting set back to MapToolPan
+# there are signals for mapToolSet - not sure what to do with them, though.
+#  it might be easiest to fix this by having a proper tool in the menu.  For
+#  now, ignore.
 
-# what are the ways out of this?
-#   potentially two separate issues which keep the object alive and
-#   receiving signals.
-# 1. callbacks from the grid
-# 2. cyclic references between UgQgis and UgEditTool.
-
-# Callbacks from the grid could probably be mitigated by keeping just
-# a weak reference to the callback (but being a little smart in case 
-# the callback is a lambda??)
-
-# re the UgQgis issue - what about watching for the layer to be removed,
-# and handling a nicer removal in that case?
-
-# is there a signal, either from the maplayerregistry or the layers themselves
-# which we can connect to and find out when the layers are removed?
-# there is layerDeleted - seems to work.
-
-# okay - so watching for layerDeleted, and when the node layer is deleted
-# we remove the callback for layerChanged, that seems to be solid.
-# still have the grid callbacks disabled, though.
-
-# adding the callbacks back in, seems to be okay.
-
-# Next: calculate a grid quality metric (e.g. relative cell-cell spacing)
-# and have that as a live attribute for the features.
+# trying shift-click to draw an edge crashed qgis.
+# there had been a lot of reloads, hard to know what the problem was.
 

@@ -1,4 +1,8 @@
 import unstructured_grid
+from delft import dfm_grid
+reload(unstructured_grid)
+reload(dfm_grid)
+
 import utils
 
 import numpy as np
@@ -42,7 +46,7 @@ class UgQgis(object):
         ec=g.edges_center()
         g.edge_to_cells()
 
-        c2c =utils.dist( vc[g.edges['cells'][edges,0]] - vc[g.edges['cells'][edges,1]] )
+        c2c=dist( vc[g.edges['cells'][edges,0]] - vc[g.edges['cells'][edges,1]] )
         A=g.cells_area()
         Acc= A[g.edges['cells'][edges,:]].sum(axis=1)
         c2c=c2c / np.sqrt(Acc) # normalized
@@ -60,20 +64,39 @@ class UgQgis(object):
             g.subscribe_after('add_node',self.on_add_node)
             g.subscribe_after('add_edge',self.on_add_edge)
 
+            g.subscribe_after('add_cell',self.on_add_cell)
+
+            g.subscribe_before('delete_edge',self.on_delete_edge)
+            g.subscribe_before('delete_node',self.on_delete_node)
+            g.subscribe_before('delete_cell',self.on_delete_cell)
+
         return g
 
-    direct_edits=False # edits come through map tool
-    # direct_edits=True # edits come through layer edit operations
+    def on_delete_node(self,g,func_name,n,**k):
+        # self.log('got signal for delete node')
+        self.nl.dataProvider().deleteFeatures([self.g.nodes['feat_id'][n]])
+        self.nl.triggerRepaint()
+
+    def on_delete_edge(self,g,func_name,j,**k):
+        # self.log('got signal for delete edge')
+        self.el.dataProvider().deleteFeatures([self.g.edges['feat_id'][j]])
+        self.el.triggerRepaint()
+
+    def on_delete_cell(self,g,func_name,c,**k):
+        # this one isn't working, while the others are...
+        feat_id=self.g.cells['feat_id'][c]
+        self.log('got signal for delete cell %d, feat_id %s'%(c,feat_id))
+        self.cl.dataProvider().deleteFeatures([feat_id])
+        self.cl.triggerRepaint()
 
     # Callbacks installed on the grid
     # instrument the grid to propagate changes back to the UI
     def on_modify_node(self,g,func_name,n,**k):
         if 'x' in k:
-            if not self.direct_edits:
-                fid=self.g.nodes[n]['feat_id']
-                geom=self.node_geometry(n)
-                self.nl.dataProvider().changeGeometryValues({fid:geom})
-                self.nl.triggerRepaint()
+            fid=self.g.nodes[n]['feat_id']
+            geom=self.node_geometry(n)
+            self.nl.dataProvider().changeGeometryValues({fid:geom})
+            self.nl.triggerRepaint()
 
             # update cells first, so that edge_quality has fresh
             # cell center and area information
@@ -83,7 +106,9 @@ class UgQgis(object):
             self.g.cells['_area'][cells]=np.nan # trigger recalc.
             cell_edges=set()
             for i in cells:
-                fid=self.g.nodes[i]['feat_id']
+                # this was all sorts of messed up - don't understand how
+                # it was working at all before...
+                fid=self.g.cells[i]['feat_id']
                 geom=self.cell_geometry(i)
                 cell_changes[fid]=geom
                 cell_edges.update(self.g.cell_to_edges(i))
@@ -116,7 +141,6 @@ class UgQgis(object):
 
             self.el.triggerRepaint()
 
-
     def on_add_node(self,g,func_name,return_value,**k):
         n=return_value
         geom=self.node_geometry(n)
@@ -135,6 +159,16 @@ class UgQgis(object):
 
         self.g.edges['feat_id'][j] = outFeats[0].id()
         self.el.triggerRepaint()
+
+    def on_add_cell(self,g,func_name,c,**k):
+        self.log('got signal for add cell')
+        geom=self.cell_geometry(c)
+        feat = QgsFeature() # can't set feature_ids
+        feat.setGeometry(geom)
+        (res, outFeats) = self.cl.dataProvider().addFeatures([feat])
+
+        self.g.cells['feat_id'][c] = outFeats[0].id()
+        self.cl.triggerRepaint()
          
     def node_geometry(self,n):
         return QgsGeometry.fromPoint(QgsPoint(self.g.nodes['x'][n,0],
@@ -146,17 +180,15 @@ class UgQgis(object):
 
         # takes an existing point memory layer, adds in nodes from g
         feats=[]
+        valid=[]
         for n in range(self.g.Nnodes()):
+            valid.append(n)
             geom = self.node_geometry(n)
             feat = QgsFeature() # can't set feature_ids
             feat.setGeometry(geom)
             feats.append(feat)
         (res, outFeats) = layer.dataProvider().addFeatures(feats)
-
-        self.g.nodes['feat_id'] = [f.id() for f in outFeats]
-
-        #if self.direct_edits:
-        #    layer.geometryChanged.connect(self.on_node_geometry_changed)
+        self.g.nodes['feat_id'][valid] = [f.id() for f in outFeats]
 
         return res
 
@@ -179,8 +211,10 @@ class UgQgis(object):
 
         # takes an existing line memory layer, adds in nodes from g
         feats=[]
+        valid=[]
         for j in self.g.valid_edge_iter():
             geom=self.edge_geometry(j)
+            valid.append(j)
             feat = QgsFeature()
             feat.initAttributes(len(self.e_attrs))
             for idx,eattr in enumerate(self.e_attrs):
@@ -204,7 +238,7 @@ class UgQgis(object):
             feat.setGeometry(geom)
             feats.append(feat)
         (res, outFeats) = layer.dataProvider().addFeatures(feats)
-        self.g.edges['feat_id']=[f.id() for f in outFeats]
+        self.g.edges['feat_id'][valid]=[f.id() for f in outFeats]
 
         return res
 
@@ -220,12 +254,15 @@ class UgQgis(object):
 
         # takes an existing line memory layer, adds in nodes from g
         feats=[]
+        valid=[]
         for i in self.g.valid_cell_iter():
             geom=self.cell_geometry(i)
             feat = QgsFeature()
             feat.setGeometry(geom)
             feats.append(feat)
+            valid.append(i)
         (res, outFeats) = layer.dataProvider().addFeatures(feats)
+        self.g.cells['feat_id'][valid]=[f.id() for f in outFeats]
         return res
 
     def clear_layers(self,canvas):
@@ -384,15 +421,18 @@ class UgEditTool(QgsMapTool):
     #   Shift engages edge operations:
     #     shift-click starts drawing edges, with nodes selected or created based on radius
     #     so you can draw a linked bunch of edges by holding down shift and clicking along the path
+    #     done.
     #   Creating an isolated node is shift click, then release shift before clicking again
+    #     done.
     #   Right click signifies delete, choosing the nearest node or edge center within a radius
+    #     done.
     #   Cells are toggled with the spacebar or 'c' key, based on current mouse position
 
     def __init__(self, canvas, ug_qgis):
         # maybe this is safer??
         super(UgEditTool,self).__init__(canvas)
         self.canvas = canvas
-        self.ug_qgis=ug_qgis
+        self._g=ug_qgis.g # should do this more based on the active layer...
 
         # track state of ongoing operations
         self.op_action=None
@@ -402,6 +442,10 @@ class UgEditTool(QgsMapTool):
 
     node_click_pixels=10
     edge_click_pixels=10
+
+    def grid(self):
+        # in the future this will be more dynamic, based on selected layer, e.g.
+        return self._g
 
     def event_to_item(self,event,types=['node','edge']):
         self.log("Start of event_to_item self=%s"%id(self))
@@ -413,9 +457,10 @@ class UgEditTool(QgsMapTool):
         map_point = map_to_pixel.toMapCoordinates(pix_x,pix_y)
         map_xy=[map_point.x(),map_point.y()]
         res={}
+        g=self.grid()
         if 'node' in types:
-            n=self.ug_qgis.g.select_nodes_nearest(map_xy)
-            node_xy=self.ug_qgis.g.nodes['x'][n]
+            n=g.select_nodes_nearest(map_xy)
+            node_xy=g.nodes['x'][n]
             node_pix_point = map_to_pixel.transform(node_xy[0],node_xy[1])
             dist2= (pix_x-node_pix_point.x())**2 + (pix_y-node_pix_point.y())**2 
             self.log("Distance^2 is %s"%dist2)
@@ -425,25 +470,48 @@ class UgEditTool(QgsMapTool):
             else:
                 res['node']=None
         if 'edge' in types:
-            self.log("No edge support yet")
-            assert False
+            j=g.select_edges_nearest(map_xy)
+            edge_xy=g.edges_center()[j]
+            edge_pix_point = map_to_pixel.transform(edge_xy[0],edge_xy[1])
+            dist2= (pix_x-edge_pix_point.x())**2 + (pix_y-edge_pix_point.y())**2 
+            self.log("Distance^2 is %s"%dist2)
+            if dist2<=self.edge_click_pixels**2:
+                # back to pixel space to calculate distance
+                res['edge']=j
+            else:
+                res['edge']=None
         self.log( "End of event_to_item self=%s"%id(self) )
         return res
         
     def canvasPressEvent(self, event):
         super(UgEditTool,self).canvasPressEvent(event)
 
-        if event.button() == Qt.LeftButton:
+        if event.button()==Qt.LeftButton:
             # or Qt.ControlModifier
             if event.modifiers() == Qt.NoModifier:
                 self.start_move_node(event)
             elif event.modifiers() == Qt.ShiftModifier:
                 self.add_edge_or_node(event)
+        elif (event.button()==Qt.RightButton) and (event.modifiers()==Qt.NoModifier):
+            # mostly delete operations
+            self.delete_edge_or_node(event)
         else:
             self.log("Press event, but not the left button")
             self.clear_op()
 
         self.log("Press event end")
+
+    def toggle_cell(self,event):
+        # A little trickier, because event here is a keypress (space bar)
+        mouse_pnt=self.canvas.mouseLastXY()
+        pix_x=mouse_pnt.x()
+        pix_y=mouse_pnt.y()
+        map_to_pixel=self.canvas.getCoordinateTransform()
+        map_point = map_to_pixel.toMapCoordinates(pix_x,pix_y)
+        map_xy=[map_point.x(),map_point.y()]
+        
+        HERE
+
 
     def start_move_node(self,event):
         items=self.event_to_item(event,types=['node'])
@@ -456,6 +524,17 @@ class UgEditTool(QgsMapTool):
             self.op_node=n
             self.op_action='move_node'
 
+    def delete_edge_or_node(self,event):
+        items=self.event_to_item(event,types=['node','edge'])
+        if items['node'] is not None:
+            self.grid().delete_node_cascade(items['node'])
+            self.clear_op() # just to be safe
+        elif items['edge'] is not None:
+            self.grid().delete_edge_cascade(items['edge'])
+            self.clear_op() # safety first
+        else:
+            self.log("Delete press event, but no feature hits")
+
     def add_edge_or_node(self,event):
         if self.op_action=='add_edge':
             self.log("Continuing add_edge_or_node")
@@ -467,7 +546,7 @@ class UgEditTool(QgsMapTool):
         self.op_action='add_edge'
         self.op_node=self.select_or_add_node(event)
         if last_node is not None:
-            j=self.ug_qgis.g.add_edge(nodes=[last_node,self.op_node])
+            j=self.grid().add_edge(nodes=[last_node,self.op_node])
             self.log("Adding an edge! j=%d"%j)
 
     def select_or_add_node(self,event):
@@ -477,7 +556,7 @@ class UgEditTool(QgsMapTool):
             map_xy=[map_point.x(),map_point.y()]
 
             self.log("Creating new node")
-            return self.ug_qgis.g.add_node(x=map_xy) # reaching a little deep
+            return self.grid().add_node(x=map_xy) # reaching a little deep
         else:
             return items['node']
             
@@ -495,6 +574,8 @@ class UgEditTool(QgsMapTool):
         super(UgEditTool,self).canvasReleaseEvent(event)
         self.log("Release event top, type=%s"%event.type())
 
+        g=self.grid()
+
         self.log("Release with op_node=%s self=%s"%(self.op_node,id(self)))
         if self.op_action=='move_node' and self.op_node is not None:
             x = event.pos().x()
@@ -502,7 +583,7 @@ class UgEditTool(QgsMapTool):
             point = self.canvas.getCoordinateTransform().toMapCoordinates(x, y)
             xy=[point.x(),point.y()]
             self.log( "Modifying location of node %d self=%s"%(self.op_node,id(self)) )
-            self.ug_qgis.g.modify_node(self.op_node,x=xy)
+            g.modify_node(self.op_node,x=xy)
             self.clear_op()
         elif self.op_action=='add_edge':
             # all the action happens on the press, and releasing the shift key
@@ -513,9 +594,11 @@ class UgEditTool(QgsMapTool):
             self.clear_op()
         self.log("Release event end")
 
-    #def keyPressEvent(self,event):
-    #    super(UgEditTool,self).keyPressEvent(event)
-    #    self.log("keyPress")
+    def keyPressEvent(self,event):
+        super(UgEditTool,self).keyPressEvent(event)
+        if event.key() == Qt.Key_Space:
+            self.toggle_cell(event)
+        self.log("keyPress")
 
     def keyReleaseEvent(self,event):
         super(UgEditTool,self).keyReleaseEvent(event)
@@ -552,13 +635,16 @@ class UgEditTool(QgsMapTool):
 ## 
 
 if 1:
-    from delft import dfm_grid
-    dfm_fn=os.path.join( os.environ['HOME'],"models/grids/sfbd-grid-southbay/SFEI_SSFB_fo_dwrbathy_net.nc")
-    g=dfm_grid.DFMGrid(dfm_fn)
+    ugrid_fn="grid-ugrid.nc"
+    if not os.path.exists(ugrid_fn):
+        dfm_fn=os.path.join( os.environ['HOME'],"models/grids/sfbd-grid-southbay/SFEI_SSFB_fo_dwrbathy_net.nc")
+        g=dfm_grid.DFMGrid(dfm_fn)
+        g.write_ugrid(ugrid_fn)
+    g=unstructured_grid.UnstructuredGrid.from_ugrid(ugrid_fn)
 else:
     g=unstructured_grid.SuntansGrid(os.path.join( os.environ['HOME'],"src/umbra/Umbra/sample_data/sfbay/"))
 
-
+## 
 uq=UgQgis(g)
  
 uq.populate_all(qgis.utils.iface)
@@ -595,3 +681,36 @@ uq.populate_all(qgis.utils.iface)
 # trying shift-click to draw an edge crashed qgis.
 # there had been a lot of reloads, hard to know what the problem was.
 
+## 
+if 0:
+    reload(unstructured_grid)
+    g=unstructured_grid.UnstructuredGrid()
+
+
+    n1=g.add_node(x=[0,0])
+    n2=g.add_node(x=[1,2])
+    n3=g.add_node(x=[0,5])
+
+    j1=g.add_edge(nodes=[n1,n2])
+    j2=g.add_edge(nodes=[n2,n3])
+    j3=g.add_edge(nodes=[n3,n1])
+
+    plt.figure(1).clf()
+    g.plot_nodes()
+    g.plot_edges()
+    g.plot_cells()
+
+    # g.toggle_cell(x=[0.5,2])
+    ## 
+    x=[0.5,2]
+
+    # lame stand-in for a true bounding polygon test
+    nodes_near = g.select_nodes_nearest(x,count=6)
+
+    # HERE: refactor unstructured_grid.find_cycles()
+    # so that it can find cycles with a given subset of either
+    # edges or nodes.  
+    # ultimately, we'll do a select_cells_nearest(inside=True),
+    # to see whether the clicked point is already in a cell.
+    for n in nodes_near:
+        HERE 

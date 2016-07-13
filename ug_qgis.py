@@ -14,7 +14,7 @@ from qgis.core import ( QgsGeometry, QgsPoint, QgsFeature,QgsVectorLayer, QgsFie
 from qgis.gui import QgsMapTool
 import qgis.utils 
 from PyQt4.QtCore import QVariant, Qt
-from PyQt4.QtGui import QCursor, QPixmap
+from PyQt4.QtGui import QCursor, QPixmap, QKeyEvent
 
 def dist(a,b=None):
     if b is None:
@@ -160,7 +160,8 @@ class UgQgis(object):
         self.g.edges['feat_id'][j] = outFeats[0].id()
         self.el.triggerRepaint()
 
-    def on_add_cell(self,g,func_name,c,**k):
+    def on_add_cell(self,g,func_name,return_value,**k):
+        c=return_value
         self.log('got signal for add cell')
         geom=self.cell_geometry(c)
         feat = QgsFeature() # can't set feature_ids
@@ -492,6 +493,8 @@ class UgEditTool(QgsMapTool):
                 self.start_move_node(event)
             elif event.modifiers() == Qt.ShiftModifier:
                 self.add_edge_or_node(event)
+            elif event.modifiers() == Qt.ControlModifier:
+                self.toggle_cell(event)
         elif (event.button()==Qt.RightButton) and (event.modifiers()==Qt.NoModifier):
             # mostly delete operations
             self.delete_edge_or_node(event)
@@ -502,16 +505,23 @@ class UgEditTool(QgsMapTool):
         self.log("Press event end")
 
     def toggle_cell(self,event):
-        # A little trickier, because event here is a keypress (space bar)
-        mouse_pnt=self.canvas.mouseLastXY()
+        self.log("Got a toggle cell event")
+        if isinstance(event,QKeyEvent): 
+            # if called with a keypress event, but that wasn't working...
+            # A little trickier, because event here is a keypress (space bar)
+            mouse_pnt=self.canvas.mouseLastXY()
+        else:
+            # from a mouse event
+            mouse_pnt=event.pos()
+
         pix_x=mouse_pnt.x()
         pix_y=mouse_pnt.y()
         map_to_pixel=self.canvas.getCoordinateTransform()
         map_point = map_to_pixel.toMapCoordinates(pix_x,pix_y)
         map_xy=[map_point.x(),map_point.y()]
         
-        HERE
-
+        # First, does it fall within an existing cell?
+        self.grid().toggle_cell_at_point(map_xy)
 
     def start_move_node(self,event):
         items=self.event_to_item(event,types=['node'])
@@ -594,11 +604,13 @@ class UgEditTool(QgsMapTool):
             self.clear_op()
         self.log("Release event end")
 
-    def keyPressEvent(self,event):
-        super(UgEditTool,self).keyPressEvent(event)
-        if event.key() == Qt.Key_Space:
-            self.toggle_cell(event)
-        self.log("keyPress")
+    # def keyPressEvent(self,event):
+    #     super(UgEditTool,self).keyPressEvent(event)
+    #     self.log("keyPress %s"%event.key() )
+    #     # weird, but seems that shift comes through, but not 
+    #     # space??  doesn't even show up.
+    #     if event.key() == Qt.Key_Space:
+    #         self.toggle_cell(event)
 
     def keyReleaseEvent(self,event):
         super(UgEditTool,self).keyReleaseEvent(event)
@@ -678,8 +690,7 @@ uq.populate_all(qgis.utils.iface)
 #  it might be easiest to fix this by having a proper tool in the menu.  For
 #  now, ignore.
 
-# trying shift-click to draw an edge crashed qgis.
-# there had been a lot of reloads, hard to know what the problem was.
+
 
 ## 
 if 0:
@@ -700,17 +711,20 @@ if 0:
     g.plot_edges()
     g.plot_cells()
 
-    # g.toggle_cell(x=[0.5,2])
+    c=g.toggle_cell_at_point(x=[0.5,2])
+    c1=g.toggle_cell_at_point(x=[3,2])
+    c2=g.toggle_cell_at_point(x=[0.5,2])
+
     ## 
     x=[0.5,2]
 
     # lame stand-in for a true bounding polygon test
-    nodes_near = g.select_nodes_nearest(x,count=6)
+    edges_near = g.select_edges_nearest(x,count=6)
 
     # HERE: refactor unstructured_grid.find_cycles()
     # so that it can find cycles with a given subset of either
     # edges or nodes.  
     # ultimately, we'll do a select_cells_nearest(inside=True),
     # to see whether the clicked point is already in a cell.
-    for n in nodes_near:
-        HERE 
+    potential_cells=g.find_cycles(max_cycle_len=7,starting_edges=edges_near)
+

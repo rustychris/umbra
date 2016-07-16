@@ -16,32 +16,15 @@
   <widget class="QWidget" name="dockWidgetContents">
    <layout class="QGridLayout" name="gridLayout">
     <item row="0" column="0">
-     <widget class="QRadioButton" name="radioButton">
-      <property name="text">
-       <string>Node tool</string>
-      </property>
-      <property name="checked">
-       <bool>true</bool>
-      </property>
-     </widget>
-    </item>
-    <item row="2" column="0">
      <layout class="QVBoxLayout" name="verticalLayout">
       <item>
        <widget class="QLabel" name="label">
         <property name="text">
-         <string>Some label</string>
+         <string>i am dockwidget</string>
         </property>
        </widget>
       </item>
      </layout>
-    </item>
-    <item row="1" column="0">
-     <widget class="QRadioButton" name="radioButton_2">
-      <property name="text">
-       <string>Edge tool</string>
-      </property>
-     </widget>
     </item>
    </layout>
   </widget>

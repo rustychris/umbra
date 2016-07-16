@@ -115,6 +115,27 @@ deploy: compile doc transcompile
 	[ ! -d i178n ]   || cp  -vfr i18n $(HOME)/$(QGISDIR)/python/plugins/$(PLUGINNAME)
 	[ ! -d $(HELP) ] || cp -vfr $(HELP) $(HOME)/$(QGISDIR)/python/plugins/$(PLUGINNAME)/help
 
+
+# symlink the .qgis2 directory to here, to facilitate faster debug cycles on
+# minor changes.
+ldeploy: compile doc transcompile
+	@echo
+	@echo "------------------------------------------"
+	@echo "Deploying plugin to your .qgis2 directory as symlinks"
+	@echo "------------------------------------------"
+	# The deploy  target only works on unix like operating system where
+	# the Python plugin directory is located at:
+	# $$HOME/$(QGISDIR)/python/plugins
+	mkdir -p $(HOME)/$(QGISDIR)/python/plugins/$(PLUGINNAME)
+	for fn in $(PY_FILES) ; do ln -svf $(PWD)/$$fn $(HOME)/$(QGISDIR)/python/plugins/$(PLUGINNAME) ; done
+	for fn in $(UI_FILES) ; do ln -svf $(PWD)/$$fn $(HOME)/$(QGISDIR)/python/plugins/$(PLUGINNAME) ; done
+	for fn in $(COMPILED_RESOURCE_FILES) ; do ln -svf $(PWD)/$$fn $(HOME)/$(QGISDIR)/python/plugins/$(PLUGINNAME) ; done
+	for fn in $(EXTRAS) ; do rm -rf $(HOME)/$(QGISDIR)/python/plugins/$(PLUGINNAME)/$$fn ; ln -svf $(PWD)/$$fn $(HOME)/$(QGISDIR)/python/plugins/$(PLUGINNAME)/$$fn ; done
+	-rm -rf $(HOME)/$(QGISDIR)/python/plugins/$(PLUGINNAME)/i18n
+	[ ! -d i18n ]   || ln -svf i18n $(HOME)/$(QGISDIR)/python/plugins/$(PLUGINNAME)
+	-rm -rf $(HOME)/$(QGISDIR)/python/plugins/$(PLUGINNAME)/help
+	[ ! -d $(HELP) ] || ln -svf $(HELP) $(HOME)/$(QGISDIR)/python/plugins/$(PLUGINNAME)/help
+
 # The dclean target removes compiled python files from plugin directory
 # also deletes any .git entry
 dclean:

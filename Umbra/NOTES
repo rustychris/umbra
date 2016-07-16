@@ -85,3 +85,16 @@ create memory layer - points
 
 that worked!
 
+--
+
+After a long period of development outside of a proper plugin, it's time
+to roll that back into a plugin to get access to more GUI elements.
+
+ - gut dockwidget for the moment. DONE
+ - switch out the editor tool, DONE (untested)
+ - no longer create our own type of layer
+   - plugin can manage the grids and associated info
+ - wire up the open layer GUI and any new machinery in Umbra, 
+   transfer the rest of ug_qgis.UgridQgis() into Umbra and GridLayer.
+
+ 

@@ -663,9 +663,8 @@ uq.populate_all(qgis.utils.iface)
  
  
 # Next:
-# having trouble with the layer-select logic tripping the maptool activation.
-# more involved editing modes: 
-#   drawing polygons in the cell layer to then match and/or create nodes/edges on demand.
+#   possible bug: create closed cycle of edges, add as cell, remove an edge
+#         => doesn't cascade to the cell, and the cell can continue to get edits.
 
 # Editing design:
 #   Option B: edits go through an view/controller which forwards
@@ -678,18 +677,9 @@ uq.populate_all(qgis.utils.iface)
 # http://gis.stackexchange.com/questions/45094/how-to-programatically-check-for-a-mouse-click-in-qgis
 
 
-# Fix the issue of map tool getting unset.
+# issue of map tool getting unset -- stopgap:
 #   manually calling iface.mapCanvas().setMapTool(ug_qgis.uq.tool)
-#   does work.
-#  when selecting a layer - get Setting map tool to ours, inactive, active, inactive. wtf?
-#  the first inactive has weird timing.  Last inactive occurs after 'Done with setting map tool
-#   to ours'.
-# maybe there is some setting of the canvas which is automatically setting it back
-# to whatever is highlighted?  It's getting set back to MapToolPan
-# there are signals for mapToolSet - not sure what to do with them, though.
-#  it might be easiest to fix this by having a proper tool in the menu.  For
-#  now, ignore.
-
+# long-term - deal with this when transitioning to real plugin/tool.
 
 
 ## 

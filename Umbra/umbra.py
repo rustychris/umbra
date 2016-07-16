@@ -30,16 +30,14 @@ from qgis.core import QgsPluginLayerRegistry,QgsMapLayerRegistry
 
 # Import the code for the DockWidget
 from umbra_dockwidget import UmbraDockWidget
+
 import os.path
-
 import umbra_openlayer
-
 import umbra_savelayer
 
 import unstructured_grid
 
 import umbra_layer
-
 import umbra_editor_tool
 
 if 0: # not sure if this is messing things up. doesn't seem to matter.
@@ -49,9 +47,8 @@ if 0: # not sure if this is messing things up. doesn't seem to matter.
     reload(umbra_layer)
     reload(umbra_editor_tool)
 
-class Umbra:
+class Boiler(object):
     """QGIS Plugin Implementation."""
-
     def __init__(self, iface):
         """Constructor.
 
@@ -92,7 +89,6 @@ class Umbra:
 
         self.pluginIsActive = False 
         self.dockwidget = None
-
 
     # noinspection PyMethodMayBeStatic
     def tr(self, message):
@@ -182,6 +178,18 @@ class Umbra:
 
         return action
 
+class GridLayer(object):
+    def __init__(self,grid):
+        self.grid=grid
+
+class Umbra(Boiler):
+    """  
+    Core more specific to the Umbra plugin
+    """ 
+    def __init__(self, iface):
+        super(Umbra,self).__init__(iface)
+        self.canvas=self.iface.mapCanvas()
+        self.gridlayers=[]
 
     def initGui(self):
         """Create the menu entries and toolbar icons inside the QGIS GUI."""
@@ -237,7 +245,6 @@ class Umbra:
 
         self.pluginIsActive = False
 
-
     def unload(self):
         """Removes the plugin menu item and icon from QGIS GUI."""
 
@@ -253,28 +260,17 @@ class Umbra:
             print "While removing toolbaricon"
             print exc
         
-        try:
-            # remove the toolbar
-            del self.toolbar
-        except AttributeError:
-            print "toolbar not set. ignoring."
+        # remove the toolbar(?)
+        self.toolbar=None
 
-        try:
-            # remove any umbra layers
-            reg=QgsMapLayerRegistry.instance()
-            to_remove=[]
-            for k,v in reg.mapLayers().iteritems():
-                if umbra_layer.is_umbra_layer(v): #isinstance(v,umbra_layer.UmbraLayer):
-                    print "Found an umbra layer"
-                    to_remove.append(k)
-                else:
-                    print "Non-umbra layer: ",v
-            print "About to remove layers"
-            reg.removeMapLayers(to_remove)
-            print "Done removing layers"
-        except Exception as exc:
-            print "Trying to remove layers"
-            print exc
+        # remove any umbra layers
+        reg=QgsMapLayerRegistry.instance()
+        to_remove=[]
+        for gridlayer in self.gridlayers:
+            to_remove += gridlayer.layers
+        print "About to remove layers"
+        reg.removeMapLayers(to_remove)
+        print "Done removing layers"
 
     #--------------------------------------------------------------------------
 
@@ -283,7 +279,13 @@ class Umbra:
             self.pluginIsActive = True
 
             print "** STARTING Umbra"
+            self.dockwidget_show()
 
+            # presumably we can do this just once on activation -
+            QgsPluginLayerRegistry.instance().addPluginLayerType(umbra_layer.UmbraPluginLayerType(self.iface))
+            print "Added plugin layer type"
+
+    def dockwidget_show(self):
             # dockwidget may not exist if:
             #    first run of plugin
             #    removed on close (see self.onClosePlugin method)
@@ -291,42 +293,56 @@ class Umbra:
                 # Create the dockwidget (after translation) and keep reference
                 self.dockwidget = UmbraDockWidget()
 
-            # connect to provide cleanup on closing of dockwidget
-            self.dockwidget.closingPlugin.connect(self.onClosePlugin)
+                # connect to provide cleanup on closing of dockwidget
+                self.dockwidget.closingPlugin.connect(self.onClosePlugin)
 
-            # show the dockwidget
-            self.iface.addDockWidget(Qt.LeftDockWidgetArea, self.dockwidget)
+                # show the dockwidget
+                self.iface.addDockWidget(Qt.LeftDockWidgetArea, self.dockwidget)
             self.dockwidget.show()
             print "Done starting"
+    def dockwidget_hide(self):
+        self.dockwidget.hide()
 
-            # presumably we can do this just once on activation -
-            QgsPluginLayerRegistry.instance().addPluginLayerType(umbra_layer.UmbraPluginLayerType(self.iface))
-            print "Added plugin layer type"
+    def current_layer_is_umbra(self):
+        # moved from tool
+        clayer = self.canvas.currentLayer()
 
+        # HERE: gridlayers, layers need to be populated
+        for gridlayer in self.gridlayers:
+            for layer in gridlayer.layers:
+                if clayer==layer:
+                    return True
+        return False
+
+    def current_grid(self):
+        gridlayer=self.active_gridlayer()
+        if gridlayer is not None:
+            return gridlayer.grid
+        else:
+            return None
+        return None
 
     def open_layer(self):
         self.activate()
-
-        print "Would be asking for a path"
         dialog=umbra_openlayer.UmbraOpenLayer(parent=self.iface.mainWindow(),
                                               iface=self.iface)
         dialog.exec_() 
 
-    def active_umbra_layer(self):
+    def active_gridlayer(self):
         if not self.pluginIsActive:
             return None
         
-        clayer = self.iface.mapCanvas().currentLayer()
-        if umbra_layer.UmbraLayer is None:
-            return None
-        if not umbra_layer.is_umbra_layer(clayer): # isinstance(clayer,umbra_layer.UmbraLayer):
-            return None
+        clayer = self.canvas.currentLayer()
 
-        return clayer
+        for gridlayer in self.gridlayers:
+            for layer in gridlayer.layers:
+                if clayer==layer:
+                    return gridlayer
+        return None
 
     def save_layer(self):
-        clayer = self.active_umbra_layer()
-        if clayer is None:
+        glayer = self.active_gridlayer()
+        if glayer is None:
             return
 
         dialog=umbra_savelayer.UmbraSaveLayer(parent=self.iface.mainWindow(),
@@ -334,31 +350,17 @@ class Umbra:
         dialog.exec_()
     
     def renumber_layer(self):
-        clayer = self.active_umbra_layer()
-        if clayer is None:
+        glayer = self.active_gridlayer()
+        if glayer is None:
             return
-        clayer.renumber()
+        glayer.grid.renumber()
 
     def delete_nodes_by_polygon(self):
         pass
         
     def run(self):
         """Run method that loads and starts the plugin"""
-
         print "** Call to run"
-
         self.activate()
-        
-        # now part of activate
-        #QgsPluginLayerRegistry.instance().addPluginLayerType(umbra_layer.UmbraPluginLayerType(self.iface))
-        #print "Added plugin layer type"
 
-        # And this is superceded by actual open methods.
 
-        # print "Adding layer"
-        # my_layer = umbra_layer.UmbraLayer(iface=self.iface)
-        # print "Created layer"
-        # self.reg=QgsMapLayerRegistry.instance()
-        # print "Got registry"
-        # self.reg.addMapLayer(my_layer)
-        # print "Done adding layer"

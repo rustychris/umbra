@@ -3,6 +3,9 @@ from PyQt4.QtCore import *
 # from qgis.core import 
 from qgis.gui import QgsMapTool
 
+import logging
+log=logging.getLogger('umbra.editor')
+
 # Copied / boilerplated from cadtools/singlesegmentfindertoolpy
 import umbra_layer 
 
@@ -25,7 +28,8 @@ class UmbraEditorTool(QgsMapTool):
         self.iface=iface
         self.canvas = iface.mapCanvas()
         self.umbra=umbra # to get references to the grid
-
+        self.log=log
+        
         super(UmbraEditorTool,self).__init__(self.canvas)
 
         #our own fancy cursor
@@ -102,7 +106,7 @@ class UmbraEditorTool(QgsMapTool):
         return self.umbra.current_grid()
 
     def event_to_item(self,event,types=['node','edge']):
-        self.log("Start of event_to_item self=%s"%id(self))
+        self.log.info("Start of event_to_item self=%s"%id(self))
         pix_x = event.pos().x()
         pix_y = event.pos().y()
 
@@ -117,7 +121,7 @@ class UmbraEditorTool(QgsMapTool):
             node_xy=g.nodes['x'][n]
             node_pix_point = map_to_pixel.transform(node_xy[0],node_xy[1])
             dist2= (pix_x-node_pix_point.x())**2 + (pix_y-node_pix_point.y())**2 
-            self.log("Distance^2 is %s"%dist2)
+            self.log.info("Distance^2 is %s"%dist2)
             if dist2<=self.node_click_pixels**2:
                 # back to pixel space to calculate distance
                 res['node']=n
@@ -128,13 +132,13 @@ class UmbraEditorTool(QgsMapTool):
             edge_xy=g.edges_center()[j]
             edge_pix_point = map_to_pixel.transform(edge_xy[0],edge_xy[1])
             dist2= (pix_x-edge_pix_point.x())**2 + (pix_y-edge_pix_point.y())**2 
-            self.log("Distance^2 is %s"%dist2)
+            self.log.info("Distance^2 is %s"%dist2)
             if dist2<=self.edge_click_pixels**2:
                 # back to pixel space to calculate distance
                 res['edge']=j
             else:
                 res['edge']=None
-        self.log( "End of event_to_item self=%s"%id(self) )
+        self.log.info( "End of event_to_item self=%s"%id(self) )
         return res
         
     def canvasPressEvent(self, event):
@@ -152,13 +156,13 @@ class UmbraEditorTool(QgsMapTool):
             # mostly delete operations
             self.delete_edge_or_node(event)
         else:
-            self.log("Press event, but not the left button")
+            self.log.info("Press event, but not the left button")
             self.clear_op()
 
-        self.log("Press event end")
+        self.log.info("Press event end")
 
     def toggle_cell(self,event):
-        self.log("Got a toggle cell event")
+        self.log.info("Got a toggle cell event")
         if isinstance(event,QKeyEvent): 
             # if called with a keypress event, but that wasn't working...
             # A little trickier, because event here is a keypress (space bar)
@@ -179,11 +183,11 @@ class UmbraEditorTool(QgsMapTool):
     def start_move_node(self,event):
         items=self.event_to_item(event,types=['node'])
         if items['node'] is None:
-            self.log("Didn't hit a node")
+            self.log.info("Didn't hit a node")
             self.clear_op() # just to be safe
         else:
             n=items['node']
-            self.log("canvas press is %s"%n)
+            self.log.info("canvas press is %s"%n)
             self.op_node=n
             self.op_action='move_node'
 
@@ -196,21 +200,21 @@ class UmbraEditorTool(QgsMapTool):
             self.grid().delete_edge_cascade(items['edge'])
             self.clear_op() # safety first
         else:
-            self.log("Delete press event, but no feature hits")
+            self.log.info("Delete press event, but no feature hits")
 
     def add_edge_or_node(self,event):
         if self.op_action=='add_edge':
-            self.log("Continuing add_edge_or_node")
+            self.log.info("Continuing add_edge_or_node")
             last_node=self.op_node
         else:
-            self.log("Starting add_edge_or_node")
+            self.log.info("Starting add_edge_or_node")
             last_node=None
             
         self.op_action='add_edge'
         self.op_node=self.select_or_add_node(event)
         if last_node is not None:
             j=self.grid().add_edge(nodes=[last_node,self.op_node])
-            self.log("Adding an edge! j=%d"%j)
+            self.log.info("Adding an edge! j=%d"%j)
 
     def select_or_add_node(self,event):
         items=self.event_to_item(event,types=['node'])
@@ -218,16 +222,11 @@ class UmbraEditorTool(QgsMapTool):
             map_point=event.mapPoint()
             map_xy=[map_point.x(),map_point.y()]
 
-            self.log("Creating new node")
+            self.log.info("Creating new node")
             return self.grid().add_node(x=map_xy) # reaching a little deep
         else:
             return items['node']
             
-    def log(self,s):
-        with open(os.path.join(os.path.dirname(__file__),'log'),'a') as fp:
-            fp.write(s+"\n")
-            fp.flush()
-    
     # def canvasMoveEvent(self, event):
     #     x = event.pos().x()
     #     y = event.pos().y()
@@ -235,17 +234,17 @@ class UmbraEditorTool(QgsMapTool):
 
     def canvasReleaseEvent(self, event):
         super(UmbraEditorTool,self).canvasReleaseEvent(event)
-        self.log("Release event top, type=%s"%event.type())
+        self.log.info("Release event top, type=%s"%event.type())
 
         g=self.grid()
 
-        self.log("Release with op_node=%s self=%s"%(self.op_node,id(self)))
+        self.log.info("Release with op_node=%s self=%s"%(self.op_node,id(self)))
         if self.op_action=='move_node' and self.op_node is not None:
             x = event.pos().x()
             y = event.pos().y()
             point = self.canvas.getCoordinateTransform().toMapCoordinates(x, y)
             xy=[point.x(),point.y()]
-            self.log( "Modifying location of node %d self=%s"%(self.op_node,id(self)) )
+            self.log.info( "Modifying location of node %d self=%s"%(self.op_node,id(self)) )
             g.modify_node(self.op_node,x=xy)
             self.clear_op()
         elif self.op_action=='add_edge':
@@ -255,11 +254,11 @@ class UmbraEditorTool(QgsMapTool):
         else:
             # think safety, act safely.
             self.clear_op()
-        self.log("Release event end")
+        self.log.info("Release event end")
 
     # def keyPressEvent(self,event):
     #     super(UmbraEditorTool,self).keyPressEvent(event)
-    #     self.log("keyPress %s"%event.key() )
+    #     self.log.info("keyPress %s"%event.key() )
     #     # weird, but seems that shift comes through, but not 
     #     # space??  doesn't even show up.
     #     if event.key() == Qt.Key_Space:
@@ -269,7 +268,7 @@ class UmbraEditorTool(QgsMapTool):
         super(UmbraEditorTool,self).keyReleaseEvent(event)
         # do we check for modifiers, or they key?
         if event.key() == Qt.Key_Shift:
-            self.log("released shift")
+            self.log.info("released shift")
             if self.op_action=='add_edge':
                 self.clear_op()
         # seems like intercepting a shift could get us into trouble

@@ -91,5 +91,9 @@ After a long period of development outside of a proper plugin, it's time
 to roll that back into a plugin to get access to more GUI elements.
 
 NEXT:
- - editor tool is not being activated when one of the umbra layers is selected.
- - should probably fix the logging, too, so that it's easier to debug things.
+ - on OSX, seems that Ctrl-click is being interpreted as a non-left button
+   click.
+ - some funkiness with releasing some of the callbacks.  Need to think through
+   the difference between removing the dockwidget, deleting a single layer, and
+   deleting all of the layers.
+   

@@ -40,7 +40,7 @@ class UmbraOpenLayer(base_class, FORM_CLASS):
 
     closingPlugin = pyqtSignal()
 
-    def __init__(self, parent=None, iface=None):
+    def __init__(self, parent=None, iface=None, umbra=None):
         """Constructor."""
         super(UmbraOpenLayer, self).__init__(parent)
         # Set up the user interface from Designer.
@@ -48,7 +48,7 @@ class UmbraOpenLayer(base_class, FORM_CLASS):
         # self.<objectname>, and you can use autoconnect slots - see
         # http://qt-project.org/doc/qt-4.8/designer-using-a-ui-file.html
         # #widgets-and-dialogs-with-auto-connect
-
+        self.umbra=umbra
         self.iface=iface
 
         self.setupUi(self)
@@ -98,12 +98,11 @@ class UmbraOpenLayer(base_class, FORM_CLASS):
         fmt=self.fmt()
         print "Will open layer ",path
         
-        my_layer = umbra_layer.UmbraLayer(iface=self.iface,format=fmt['name'],
-                                          path=path)
+        my_layer = umbra_layer.UmbraLayer.open_layer(umbra=self.umbra,
+                                                     grid_format=fmt['name'],
+                                                     path=path)
         print "Adding layer",my_layer
-        reg=QgsMapLayerRegistry.instance()
-        reg.addMapLayer(my_layer)
-
+        my_layer.register_layers()
         
     def on_cancel_clicked(self):
         print "Cancel!"

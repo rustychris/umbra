@@ -88,7 +88,7 @@ class UmbraEditorTool(QgsMapTool):
         set the tool to enabled if the new layer is an UmbraLayer
         it's possible that this would be better off in umbra
         """
-        enabled=self.current_layer_is_umbra():
+        enabled=self.umbra.current_layer_is_umbra()
 
         self.action_coverage_editor.setEnabled( enabled )
         if enabled:
@@ -138,7 +138,7 @@ class UmbraEditorTool(QgsMapTool):
         return res
         
     def canvasPressEvent(self, event):
-        super(UgEditTool,self).canvasPressEvent(event)
+        super(UmbraEditorTool,self).canvasPressEvent(event)
 
         if event.button()==Qt.LeftButton:
             # or Qt.ControlModifier
@@ -234,7 +234,7 @@ class UmbraEditorTool(QgsMapTool):
     #     point = self.canvas.getCoordinateTransform().toMapCoordinates(x, y)
 
     def canvasReleaseEvent(self, event):
-        super(UgEditTool,self).canvasReleaseEvent(event)
+        super(UmbraEditorTool,self).canvasReleaseEvent(event)
         self.log("Release event top, type=%s"%event.type())
 
         g=self.grid()
@@ -258,7 +258,7 @@ class UmbraEditorTool(QgsMapTool):
         self.log("Release event end")
 
     # def keyPressEvent(self,event):
-    #     super(UgEditTool,self).keyPressEvent(event)
+    #     super(UmbraEditorTool,self).keyPressEvent(event)
     #     self.log("keyPress %s"%event.key() )
     #     # weird, but seems that shift comes through, but not 
     #     # space??  doesn't even show up.
@@ -266,7 +266,7 @@ class UmbraEditorTool(QgsMapTool):
     #         self.toggle_cell(event)
 
     def keyReleaseEvent(self,event):
-        super(UgEditTool,self).keyReleaseEvent(event)
+        super(UmbraEditorTool,self).keyReleaseEvent(event)
         # do we check for modifiers, or they key?
         if event.key() == Qt.Key_Shift:
             self.log("released shift")

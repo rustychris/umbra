@@ -20,6 +20,13 @@
  *                                                                         *
  ***************************************************************************/
 """
+import logging
+log=logging.getLogger('umbra')
+log.setLevel(logging.DEBUG)
+ch=logging.StreamHandler()
+fmter=logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+ch.setFormatter(fmter)
+log.addHandler(ch)
 
 from PyQt4.QtCore import QSettings, QTranslator, qVersion, QCoreApplication, Qt
 from PyQt4.QtGui import QAction, QIcon
@@ -178,16 +185,16 @@ class Boiler(object):
 
         return action
 
-class GridLayer(object):
-    def __init__(self,grid):
-        self.grid=grid
 
 class Umbra(Boiler):
     """  
     Core more specific to the Umbra plugin
     """ 
     def __init__(self, iface):
+        self.log=log
         super(Umbra,self).__init__(iface)
+        self.log.info('Firing up Umbra')
+        
         self.canvas=self.iface.mapCanvas()
         self.gridlayers=[]
 
@@ -203,7 +210,7 @@ class Umbra(Boiler):
         #     callback=self.run,
         #     parent=self.iface.mainWindow())
 
-        self.editor_tool = umbra_editor_tool.UmbraEditorTool(self.iface)
+        self.editor_tool = umbra_editor_tool.UmbraEditorTool(self.iface,umbra=self)
 
         self.add_action(icon_path,text='Open Umbra layer',
                         callback=self.open_layer,
@@ -230,7 +237,11 @@ class Umbra(Boiler):
     #--------------------------------------------------------------------------
 
     def onClosePlugin(self):
-        """Cleanup necessary items here when plugin dockwidget is closed"""
+        """
+        Cleanup necessary items here when plugin dockwidget is closed
+         - hmm - not sure that just closing the dock widget should 
+           shutdown so much other stuff.  
+        """
 
         print "** CLOSING Umbra"
 
@@ -243,6 +254,17 @@ class Umbra(Boiler):
         # when closing the docked window:
         # self.dockwidget = None
 
+        li=self.iface.legendInterface()
+        li.currentLayerChanged.disconnect(self.on_layer_changed)
+
+        # remove map tool from the canvas
+        canvas=self.iface.mapCanvas()
+        if canvas.mapTool() == self.editor_tool:
+            self.log.info("active map tool is ours - how to remove??")
+            self.editor_tool=None
+        # remove callbacks from the grid:
+        self.log.info("Not ready for removing callbacks from the grid")
+        
         self.pluginIsActive = False
 
     def unload(self):
@@ -267,10 +289,10 @@ class Umbra(Boiler):
         reg=QgsMapLayerRegistry.instance()
         to_remove=[]
         for gridlayer in self.gridlayers:
-            to_remove += gridlayer.layers
-        print "About to remove layers"
+            to_remove += [gl.name() for gl in gridlayer.layers]
+        self.log.info("About to remove layers")
         reg.removeMapLayers(to_remove)
-        print "Done removing layers"
+        self.log.info("Done removing layers")
 
     #--------------------------------------------------------------------------
 
@@ -281,9 +303,10 @@ class Umbra(Boiler):
             print "** STARTING Umbra"
             self.dockwidget_show()
 
-            # presumably we can do this just once on activation -
-            QgsPluginLayerRegistry.instance().addPluginLayerType(umbra_layer.UmbraPluginLayerType(self.iface))
-            print "Added plugin layer type"
+            # if this is omitted, be sure to also skip over
+            # the disconnects.
+            li=self.iface.legendInterface()
+            li.currentLayerChanged.connect(self.on_layer_changed)
 
     def dockwidget_show(self):
             # dockwidget may not exist if:
@@ -303,12 +326,13 @@ class Umbra(Boiler):
     def dockwidget_hide(self):
         self.dockwidget.hide()
 
-    def current_layer_is_umbra(self):
+    def current_layer_is_umbra(self,clayer=None):
         # moved from tool
-        clayer = self.canvas.currentLayer()
+        if clayer is None:
+            clayer = self.canvas.currentLayer()
 
-        # HERE: gridlayers, layers need to be populated
         for gridlayer in self.gridlayers:
+            self.log.info('Checking for layers in %s'%gridlayer)
             for layer in gridlayer.layers:
                 if clayer==layer:
                     return True
@@ -325,7 +349,8 @@ class Umbra(Boiler):
     def open_layer(self):
         self.activate()
         dialog=umbra_openlayer.UmbraOpenLayer(parent=self.iface.mainWindow(),
-                                              iface=self.iface)
+                                              iface=self.iface,
+                                              umbra=self)
         dialog.exec_() 
 
     def active_gridlayer(self):
@@ -345,6 +370,7 @@ class Umbra(Boiler):
         if glayer is None:
             return
 
+        # TODO: probably this gets routed through UmbraLayer?
         dialog=umbra_savelayer.UmbraSaveLayer(parent=self.iface.mainWindow(),
                                               iface=self.iface)
         dialog.exec_()
@@ -362,5 +388,22 @@ class Umbra(Boiler):
         """Run method that loads and starts the plugin"""
         print "** Call to run"
         self.activate()
+
+    def register_grid(self,ul):
+        self.gridlayers.append(ul)
+        
+    def on_layer_changed(self,layer):
+        if layer is not None:
+            print "on_layer_changed"
+            self.log.info('on layer changed')
+            print "layer is ",layer
+            # Not sure why, but using layer.id() was triggering an error
+            # about the layer being deleted.  Hmm - this is still somehow
+            # related to an error about the layer being deleted.
+            if self.current_layer_is_umbra(layer):
+                self.log.info("Setting map tool to ours")
+                self.iface.mapCanvas().setMapTool(self.editor_tool)
+                self.log.info("Done with setting map tool to ours")
+
 
 

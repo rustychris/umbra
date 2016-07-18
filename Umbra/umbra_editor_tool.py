@@ -156,7 +156,8 @@ class UmbraEditorTool(QgsMapTool):
             # mostly delete operations
             self.delete_edge_or_node(event)
         else:
-            self.log.info("Press event, but not the left button")
+            self.log.info("Press event, but not the left button (%s)"%event.button())
+            self.log.info(" with modifiers %s"%( int(event.modifiers())) )
             self.clear_op()
 
         self.log.info("Press event end")

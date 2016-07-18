@@ -32,7 +32,7 @@ FORM_CLASS, _ = uic.loadUiType(os.path.join(
 
 class UmbraDockWidget(QtGui.QDockWidget, FORM_CLASS):
 
-    closingPlugin = pyqtSignal()
+    closingDockWidget = pyqtSignal()
 
     def __init__(self, parent=None):
         """Constructor."""
@@ -45,6 +45,6 @@ class UmbraDockWidget(QtGui.QDockWidget, FORM_CLASS):
         self.setupUi(self)
 
     def closeEvent(self, event):
-        self.closingPlugin.emit()
+        self.closingDockWidget.emit()
         event.accept()
 

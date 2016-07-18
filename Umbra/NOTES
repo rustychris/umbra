@@ -90,10 +90,31 @@ that worked!
 After a long period of development outside of a proper plugin, it's time
 to roll that back into a plugin to get access to more GUI elements.
 
-NEXT:
+ODD, but okay:
  - on OSX, seems that Ctrl-click is being interpreted as a non-left button
-   click.
+   click. Ah - Command-click appears as control-click
+ - for some reason, to get the logs to work, have to open the python console
+   and then reload the plugin.
+
+
+PROBLEM:
  - some funkiness with releasing some of the callbacks.  Need to think through
    the difference between removing the dockwidget, deleting a single layer, and
    deleting all of the layers.
-   
+
+ probably closing the dockwidget should do nothing.
+ for that matter, should be able to delete the node layer and keep on editing.
+
+ if it's possible to watch for deletion of the group?  but there is still some trickiness
+   to multiple deletes at one time.
+
+ Lay out the various destructor paths:
+   Umbra::onClosePlugin -- currently Umbra::dockwidget_show(), when creating the dockwidgert,
+     connects closingPlugin to Umbra::onClosePlugin.  That's probably a bad idea.
+     the handler here disconnects the currentLayerChanged signal, but doesn't try to
+     remove layers.
+
+   Umbra::unload -- I think this is for reloading the plugin. it tears down menus,
+     and tries to remove any layers that are still around.  probably this should take
+     care of removing any other signal connections, too.
+     

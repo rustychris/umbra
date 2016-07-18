@@ -24,8 +24,19 @@ class UmbraLayer(object):
         Does not add the layers to the GUI - call register_layers
         for that.
         """
-        self.log=log
-        
+        # having some trouble getting reliable output from the log...
+        if 0:
+            self.log=log
+        else:
+            class DumbLog(object):
+                def info(self,*a):
+                    print " ".join(a)
+            log=DumbLog()
+            log.debug=log.info
+            log.warning=log.info
+            log.error=log.info
+            self.log=log
+            
         self.umbra=umbra
 
         # modifications internal to the grid
@@ -319,7 +330,8 @@ class UmbraLayer(object):
         reg=QgsMapLayerRegistry.instance()
         for l in [self.nl,self.el,self.cl]:
             try:
-                reg.removeMapLayers([l])
+                if l is not None:
+                    reg.removeMapLayers([l])
             except Exception as exc:
                 self.log.error(exc)
                 

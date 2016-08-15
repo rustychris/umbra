@@ -20,15 +20,22 @@
  *                                                                         *
  ***************************************************************************/
 """
+import os
 import logging
 log=logging.getLogger('umbra')
 log.setLevel(logging.DEBUG)
-ch=logging.StreamHandler()
-ch.setLevel(logging.DEBUG)
 fmter=logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+if 0: # stream output
+    ch=logging.StreamHandler()
+else:
+    ch=logging.StreamHandler(open(os.path.join(os.path.dirname(__file__),'log')))
+    
+ch.setLevel(logging.DEBUG)
 ch.setFormatter(fmter)
 log.addHandler(ch)
-
+# NOT WORKING
+log.info('Loading umbra')
+    
 from PyQt4.QtCore import QSettings, QTranslator, qVersion, QCoreApplication, Qt
 from PyQt4.QtGui import QAction, QIcon
 # Initialize Qt resources from file resources.py
@@ -242,31 +249,12 @@ class Umbra(Boiler):
         record that the dockwidget was closed
         """
 
-        print "** cleaning up dockwidget"
+        log.info("** cleaning up dockwidget")
 
         # disconnects
-        self.dockwidget.closing_dockwidget.disconnect(self.onClosePlugin)
+        self.dockwidget.closingDockWidget.disconnect(self.on_close_dockwidget)
         self.dockwidget=None
-
-        # remove this statement if dockwidget is to remain
-        # for reuse if plugin is reopened
-        # Commented next statement since it causes QGIS crashe
-        # when closing the docked window:
-
-        # old code which took more drastic action when the widget was closed.
-        
-        # li=self.iface.legendInterface()
-        # li.currentLayerChanged.disconnect(self.on_layer_changed)
-        # 
-        # # remove map tool from the canvas
-        # canvas=self.iface.mapCanvas()
-        # if canvas.mapTool() == self.editor_tool:
-        #     self.log.info("active map tool is ours - how to remove??")
-        #     self.editor_tool=None
-        # # remove callbacks from the grid:
-        # self.log.info("Not ready for removing callbacks from the grid")
-        # 
-        # self.pluginIsActive = False
+        log.info("disconnected")
 
     def unload(self):
         """Removes the plugin menu item and icon from QGIS GUI."""
@@ -287,15 +275,8 @@ class Umbra(Boiler):
         self.toolbar=None
 
         # remove any umbra layers
-        reg=QgsMapLayerRegistry.instance()
-        to_remove=[]
         for gridlayer in self.gridlayers:
-            to_remove += [gl.name()
-                          for gl in gridlayer.layers
-                          if gl is not None]
-        self.log.info("About to remove layers")
-        reg.removeMapLayers(to_remove)
-        self.log.info("Done removing layers")
+            gridlayer.remove_all_qlayers()
 
     #--------------------------------------------------------------------------
 

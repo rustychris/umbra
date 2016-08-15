@@ -118,3 +118,38 @@ PROBLEM:
      and tries to remove any layers that are still around.  probably this should take
      care of removing any other signal connections, too.
      
+
+
+change UmbraLayer to manage an arbitrary set of actual layers.
+
+For a managed layer, it needs...
+ a log object
+   - can copy or reference UmbraLayer.log
+ the grid, which it may add fields to, and/or register some callbacks
+   - i.e. factor out extend_grid()
+   - factor out install_edge_quality, update_edge_quality
+     edge_quality becomes a field managed by the edge layer
+ have to come up with a way to decouple the different parts of
+   modify_node.  currently, this pushes geometry changes to all of
+   the layers.  ways to do this
+    a. each layer listens for the on_modify_node signals
+    b. UnstructuredGrid gets new signals, on_edge_geometry_changed
+       on_cell_geometry_changed, which would come out of on_node_geometry
+       changed.
+
+
+edge quality might be a bit tricky - it relies on having proper cell
+centers, which are currently calculated by the cell layer.  fixing
+this in UnstructuredGrid might be the best approach.
+
+simple display is now working, but..
+ - closing the dock widget crashes all of qgis.
+   need to get logging working to debug this.
+ 
+
+
+  
+     
+   
+ 
+ 

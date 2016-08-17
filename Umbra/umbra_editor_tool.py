@@ -116,6 +116,10 @@ class UmbraEditorTool(QgsMapTool):
         map_xy=[map_point.x(),map_point.y()]
         res={}
         g=self.grid()
+        if g is None:
+            log.info("event_to_item: no grid available")
+            return res
+
         if 'node' in types:
             n=g.select_nodes_nearest(map_xy)
             node_xy=g.nodes['x'][n]

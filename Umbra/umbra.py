@@ -28,7 +28,7 @@ fmter=logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 if 0: # stream output
     ch=logging.StreamHandler()
 else:
-    ch=logging.StreamHandler(open(os.path.join(os.path.dirname(__file__),'log')))
+    ch=logging.StreamHandler(open(os.path.join(os.path.dirname(__file__),'log'),'wt'))
     
 ch.setLevel(logging.DEBUG)
 ch.setFormatter(fmter)
@@ -242,6 +242,18 @@ class Umbra(Boiler):
                         add_to_menu=True,
                         add_to_toolbar=False)
 
+        self.add_action(icon_path,text='Show Umbra panel',
+                        callback=self.dockwidget_show,
+                        parent=self.iface.mainWindow(),
+                        add_to_menu=True,
+                        add_to_toolbar=False)
+        
+        self.add_action(icon_path,text='Mesh Edit',
+                        callback=self.enable_tool,
+                        parent=self.iface.mainWindow(),
+                        add_to_menu=False,
+                        add_to_toolbar=True)
+
     #--------------------------------------------------------------------------
 
     def on_close_dockwidget(self):
@@ -328,8 +340,8 @@ class Umbra(Boiler):
         if gridlayer is not None:
             return gridlayer.grid
         else:
+            log.warning("request for current grid, but umbra didn't find one")
             return None
-        return None
 
     def open_layer(self):
         self.activate()
@@ -340,14 +352,15 @@ class Umbra(Boiler):
 
     def active_gridlayer(self):
         if not self.pluginIsActive:
+            log.info("active_gridlayer: plugin not active")
             return None
         
         clayer = self.canvas.currentLayer()
+        log.info("Searching for layer " + str(clayer))
 
         for gridlayer in self.gridlayers:
-            for layer in gridlayer.layers:
-                if clayer==layer:
-                    return gridlayer
+            if gridlayer.match_to_qlayer(clayer):
+                return gridlayer
         return None
 
     def save_layer(self):
@@ -368,7 +381,11 @@ class Umbra(Boiler):
 
     def delete_nodes_by_polygon(self):
         pass
-        
+
+    def enable_tool(self):
+        log.info("Enabled umbra mapTool")
+        self.iface.mapCanvas().setMapTool(self.editor_tool)
+
     def run(self):
         """Run method that loads and starts the plugin"""
         print "** Call to run"

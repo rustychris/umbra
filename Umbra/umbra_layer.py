@@ -244,14 +244,15 @@ class UmbraEdgeLayer(UmbraSubLayer):
         edge_quality_idx=[i
                           for i,attr in enumerate(self.e_attrs)
                           if attr.name()=='edge_quality'][0]
-        js=list(cell_edges)
-        self.update_edge_quality(js)
-        for j in js:
-            # and update edge quality field - would be nice
-            # to come up with a nice abstraction here...
-            fid=self.grid.edges[j]['feat_id']
-            edge_attr_changes[fid]={edge_quality_idx:float(self.grid.edges[j]['edge_quality'])}
-        self.qlayer.dataProvider().changeAttributeValues(edge_attr_changes)
+
+        # js=list(cell_edges)
+        # self.update_edge_quality(js)
+        # for j in js:
+        #     # and update edge quality field - would be nice
+        #     # to come up with a nice abstraction here...
+        #     fid=self.grid.edges[j]['feat_id']
+        #     edge_attr_changes[fid]={edge_quality_idx:float(self.grid.edges[j]['edge_quality'])}
+        # self.qlayer.dataProvider().changeAttributeValues(edge_attr_changes)
         self.qlayer.triggerRepaint()
 
     def edge_geometry(self,j):
@@ -374,6 +375,11 @@ class UmbraLayer(object):
         self.layers=[] # SubLayer objects associated with this grid.
         self.umbra.register_grid(self)
 
+    def match_to_qlayer(self,ql):
+        for layer in self.layers:
+            if layer.qlayer.name() == ql.name():
+                return True
+        return False
     def grid_name(self):
         """ used to label the group
         """
@@ -455,11 +461,11 @@ class UmbraLayer(object):
         # canvas.setExtent(layer.extent())
 
     def remove_all_qlayers(self):
-        reg=QgsMapLayerRegistry.instance()
         layers=[]
         for sublayer in self.layers:
             layers.append( sublayer.qlayer.name() )
-        reg.removeMapLayers(to_remove)
+        reg=QgsMapLayerRegistry.instance()
+        reg.removeMapLayers(layers)
         
     def distance_to_node(self,pnt,i):
         """ compute distance from the given point to the given node, returned in

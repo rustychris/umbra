@@ -146,6 +146,18 @@ simple display is now working, but..
  - closing the dock widget crashes all of qgis.
    need to get logging working to debug this.
  
+ - logging fixed, but the crash seems not to happen on linux.
+
+
+NEXT:
+ - saving grids
+ - understand feature selections - i.e. for deleting or moving swath of cells.
+ - undo
+ - maybe a dockwidget option to show some grid stats?
+ - option to change maxnodes?
+ - are any of the optimization approaches ready?  From Ed's comments, sounds like
+   Janet uses an incremental construction - each pass pushing all of the nodes a bit
+   closer to something like 
 
 
   

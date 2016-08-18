@@ -150,9 +150,26 @@ simple display is now working, but..
 
 
 NEXT:
+ - undo
+    The Qt way is through PyQt4.QtGui.QUndoCommand
+    Each layer has an undoStack().
+    QGIS toggles the availability of undo based on which layer is selected.
+    undoStack.push() does that.
+    command objects have undo() and redo().
+    
+    http://www.informit.com/articles/article.aspx?p=1187104&seqNum=3
+
+ is there some clever way to handle this, say with context managers?
+ 
+ for starters, the redo() part could be empty, and instead I just record
+ the serial number.  Then do some grid manipulations, and undo() will use that
+ grid serial
+
+  undoStack.clear() will do that.
+
+
  - saving grids
  - understand feature selections - i.e. for deleting or moving swath of cells.
- - undo
  - maybe a dockwidget option to show some grid stats?
  - option to change maxnodes?
  - are any of the optimization approaches ready?  From Ed's comments, sounds like

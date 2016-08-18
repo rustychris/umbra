@@ -16,6 +16,23 @@ log=logging.getLogger('umbra.layer')
 # Used to be a QgsPluginLayer, but no more.
 # now it manages the layers and data specific to a grid
 
+# Maybe the Undo handling will live here?
+from PyQt4.QtGui import QUndoCommand
+class GridCommand(QUndoCommand):
+    def __init__(self,g,description="edit grid"):
+        super(GridCommand,self).__init__(description)
+        self.grid = g
+        self.checkpoint = g.checkpoint()
+        self.redo_count=0
+
+    def undo(self):
+        g.revert(self.checkpoint)
+        
+    def redo(self):
+        # might be used in the future to allow exactly one redo()
+        self.redo_count+=1
+        
+
 class UmbraSubLayer(object):
     def __init__(self,log,grid,crs):
         self.log=log

@@ -62,12 +62,12 @@ class UmbraEditorTool(QgsMapTool):
         QObject.connect(self.action_coverage_editor, SIGNAL("triggered()"), self.handle_tool_select)
         QObject.connect(self.iface, SIGNAL("currentLayerChanged(QgsMapLayer*)"), self.handle_layer_changed)
         
-        # self.state = []
         # track state of ongoing operations
         self.op_action=None
         self.op_node=None
         
     def handle_tool_select(self):
+        assert False
         print "handle_tool_select - probably shouldn't be calling this now"
         if self.action_coverage_editor.isChecked():
             self.canvas.setMapTool(self)
@@ -77,9 +77,6 @@ class UmbraEditorTool(QgsMapTool):
             self.canvas.unsetMapTool(self)
             # self.umbra.dockwidget_hide() # untested
 
-    #def set_edit_mode(self,mode):
-    #    self.edit_mode = mode
-        
     def activate(self):
         print "Call to activate for the editor tool"
         self.canvas.setCursor(self.cursor)
@@ -102,8 +99,9 @@ class UmbraEditorTool(QgsMapTool):
             self.canvas.unsetMapTool(self)
 
     def grid(self):
-        # in the future this will be more dynamic, based on selected layer, e.g.
         return self.umbra.current_grid()
+    def gridlayer(self):
+        return self.umbra.active_gridlayer()
 
     def event_to_item(self,event,types=['node','edge']):
         self.log.info("Start of event_to_item self=%s"%id(self))
@@ -167,6 +165,10 @@ class UmbraEditorTool(QgsMapTool):
         self.log.info("Press event end")
 
     def toggle_cell(self,event):
+        gl=self.gridlayer()
+        if gl is None:
+            return
+        
         self.log.info("Got a toggle cell event")
         if isinstance(event,QKeyEvent): 
             # if called with a keypress event, but that wasn't working...
@@ -183,7 +185,7 @@ class UmbraEditorTool(QgsMapTool):
         map_xy=[map_point.x(),map_point.y()]
         
         # First, does it fall within an existing cell?
-        self.grid().toggle_cell_at_point(map_xy)
+        gl.toggle_cell_at_point(map_xy)
 
     def start_move_node(self,event):
         items=self.event_to_item(event,types=['node'])
@@ -197,17 +199,26 @@ class UmbraEditorTool(QgsMapTool):
             self.op_action='move_node'
 
     def delete_edge_or_node(self,event):
+        gl=self.gridlayer()
+        if gl is None:
+            self.log.warning("Got to delete_edge_or_node, but gridlayer is None")
+            return
+        
         items=self.event_to_item(event,types=['node','edge'])
         if items['node'] is not None:
-            self.grid().delete_node_cascade(items['node'])
+            gl.delete_node(items['node'])
             self.clear_op() # just to be safe
         elif items['edge'] is not None:
-            self.grid().delete_edge_cascade(items['edge'])
+            gl.delete_edge(items['edge'])
             self.clear_op() # safety first
         else:
             self.log.info("Delete press event, but no feature hits")
 
     def add_edge_or_node(self,event):
+        gl=self.gridlayer()
+        if gl is None:
+            return None
+        
         if self.op_action=='add_edge':
             self.log.info("Continuing add_edge_or_node")
             last_node=self.op_node
@@ -218,17 +229,20 @@ class UmbraEditorTool(QgsMapTool):
         self.op_action='add_edge'
         self.op_node=self.select_or_add_node(event)
         if last_node is not None:
-            j=self.grid().add_edge(nodes=[last_node,self.op_node])
-            self.log.info("Adding an edge! j=%d"%j)
+            gl.add_edge(nodes=[last_node,self.op_node])
 
     def select_or_add_node(self,event):
+        gl=self.gridlayer()
+        if gl is None:
+            return None
+        
         items=self.event_to_item(event,types=['node'])
         if items['node'] is None:
             map_point=event.mapPoint()
             map_xy=[map_point.x(),map_point.y()]
 
             self.log.info("Creating new node")
-            return self.grid().add_node(x=map_xy) # reaching a little deep
+            return gl.add_node(x=map_xy) 
         else:
             return items['node']
             
@@ -241,7 +255,11 @@ class UmbraEditorTool(QgsMapTool):
         super(UmbraEditorTool,self).canvasReleaseEvent(event)
         self.log.info("Release event top, type=%s"%event.type())
 
-        g=self.grid()
+        gl=self.gridlayer()
+        if gl is None:
+            self.log.info("canvasReleaseEvent in editor tool, but no grid layer!")
+            self.clear_op()
+            return
 
         self.log.info("Release with op_node=%s self=%s"%(self.op_node,id(self)))
         if self.op_action=='move_node' and self.op_node is not None:
@@ -250,7 +268,7 @@ class UmbraEditorTool(QgsMapTool):
             point = self.canvas.getCoordinateTransform().toMapCoordinates(x, y)
             xy=[point.x(),point.y()]
             self.log.info( "Modifying location of node %d self=%s"%(self.op_node,id(self)) )
-            g.modify_node(self.op_node,x=xy)
+            gl.modify_node(self.op_node,x=xy)
             self.clear_op()
         elif self.op_action=='add_edge':
             # all the action happens on the press, and releasing the shift key
@@ -261,13 +279,21 @@ class UmbraEditorTool(QgsMapTool):
             self.clear_op()
         self.log.info("Release event end")
 
-    # def keyPressEvent(self,event):
-    #     super(UmbraEditorTool,self).keyPressEvent(event)
-    #     self.log.info("keyPress %s"%event.key() )
-    #     # weird, but seems that shift comes through, but not 
-    #     # space??  doesn't even show up.
-    #     if event.key() == Qt.Key_Space:
-    #         self.toggle_cell(event)
+    def keyPressEvent(self,event):
+        super(UmbraEditorTool,self).keyPressEvent(event)
+        key=event.key()
+        
+        self.log.info("keyPress %r %s"%(key,event.text()) )
+        # weird, but seems that shift comes through, but not 
+        # space??  doesn't even show up.
+        txt=event.text()
+        
+        if txt == ' ':
+            self.toggle_cell(event)
+        elif txt == 'z':
+            self.undo()
+        elif txt == 'Z':
+            self.redo()
 
     def keyReleaseEvent(self,event):
         super(UmbraEditorTool,self).keyReleaseEvent(event)
@@ -280,6 +306,24 @@ class UmbraEditorTool(QgsMapTool):
         # ignore() lets it percolate to other interested parties
         event.ignore()
 
+    def undo(self):
+        self.log.info('got request for undo')
+        gl=self.gridlayer()
+        if gl is not None:
+            self.log.info('sending undo request to umbra layer %r'%gl)
+            gl.undo()
+        else:
+            self.log.info('editor got undo request, but has no grid layer')
+
+    def redo(self):
+        self.log.info('got request for redo')
+        gl=self.gridlayer()
+        if gl is not None:
+            self.log.info('sending redo request to umbra layer %r'%gl)
+            gl.redo()
+        else:
+            self.log.info('editor got redo request, but has no grid layer')
+        
     def clear_op(self):
         self.op_node=None
         self.op_action=None 

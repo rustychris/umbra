@@ -149,7 +149,30 @@ simple display is now working, but..
  - logging fixed, but the crash seems not to happen on linux.
 
 
+  last messages when removing dockwidget:
+  
+2016-08-20 10:34:41,775 - umbra - INFO - on layer changed
+2016-08-20 10:34:41,775 - umbra - INFO - Checking for layers in <Umbra.umbra_layer.UmbraLayer object at 0x12dbd78d0>
+2016-08-20 10:34:41,776 - umbra - INFO - Checking for layers in <Umbra.umbra_layer.UmbraLayer object at 0x12dbd78d0>
+2016-08-20 10:34:45,499 - umbra - INFO - ** cleaning up dockwidget
+ <self.dockwidget was set to None here>
+2016-08-20 10:34:45,499 - umbra - INFO - disconnected
+
+A: if we don't listen to closingDockWidget at all - does that avoid the crash?
+   yes.
+Maybe for now, best to just skip any of that closeEvent stuff.  The use case
+there is not clear anymore, since closing the dock widget no longer closes
+down umbra.
+
+
+
 NEXT:
+ - selecting the group is not enough to figure out active gridlayer.
+   because selecting a group means that canvas.currentLayer returns None
+   maybe we need to talk to the legend?
+   Hmm - no clear path forward on this - for now, be sure it doesn't
+   cause crash, but don't bend over backwards to handle it.
+   
  - undo
     The Qt way is through PyQt4.QtGui.QUndoCommand
     Each layer has an undoStack().
@@ -159,12 +182,47 @@ NEXT:
     
     http://www.informit.com/articles/article.aspx?p=1187104&seqNum=3
 
- is there some clever way to handle this, say with context managers?
- 
- for starters, the redo() part could be empty, and instead I just record
- the serial number.  Then do some grid manipulations, and undo() will use that
- grid serial
+ Adding to the clayer undo stack is fine, redo() gets called, ustack.canUndo()
+ now returns True, but the GUI Undo option does not get set.
 
+ Is it necessary to use QGIS::QgsVectorLayerUndoCommand, instead of just QUndoCommand?
+
+ hmm - there is vectorLayer.startEditing(), after which vectorLayer.editBuffer()
+ will give us a VectorLayerEditBuffer()
+
+also an endEditCommand() member function
+ ah - issuing a startEditing() worked, after which the Undo menu was active, and
+  clicking Undo did in fact call the previously setup undo action.
+
+ for better or worse, entering edit mode also changes the rendering of the cells,
+ adding vertex markers.
+
+  (a) is there a way to automatically enter/exit editing?
+       startEditing() works...
+       commitChanges() works.
+       
+  For my purposes, it may be easiest to use a QUndoStack, but wire in my own
+  undo handling.
+
+ 1. Have the umbra tool intercept 'z' for undo. DONE
+
+    Basic undo for moving nodes is working.
+    Signals appear to propagate for toggling cells - that's nice.
+    minor hiccup on a toggle cell, but other times it worked just fine.
+
+    add/remove edge with undo is working.
+
+    toggle cell is slow, but aside from that it work with undo.
+    
+    how about z and Z ? okay.
+
+    moving a node can be redone with 'Z'
+    redo on add edge works
+    redo on toggling a cell does not always work..
+
+    possible bug in delete_node_cascade() - had a case where it failed with an error
+     about cells still referring to the node.
+     
   undoStack.clear() will do that.
 
 

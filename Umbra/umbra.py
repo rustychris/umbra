@@ -256,17 +256,17 @@ class Umbra(Boiler):
 
     #--------------------------------------------------------------------------
 
-    def on_close_dockwidget(self):
-        """
-        record that the dockwidget was closed
-        """
-
-        log.info("** cleaning up dockwidget")
-
-        # disconnects
-        self.dockwidget.closingDockWidget.disconnect(self.on_close_dockwidget)
-        self.dockwidget=None
-        log.info("disconnected")
+    # def on_close_dockwidget(self):
+    #     """
+    #     record that the dockwidget was closed
+    #     """
+    # 
+    #     log.info("** cleaning up dockwidget")
+    # 
+    #     # disconnects
+    #     self.dockwidget.closingDockWidget.disconnect(self.on_close_dockwidget)
+    #     self.dockwidget=None
+    #     log.info("disconnected")
 
     def unload(self):
         """Removes the plugin menu item and icon from QGIS GUI."""
@@ -286,7 +286,9 @@ class Umbra(Boiler):
         # remove the toolbar(?)
         self.toolbar=None
 
-        # remove any umbra layers
+        self.dockwidget_hide() # ideally really remove it, but maybe good enough to just hide.
+        
+        # remove any umbra layers - doesn't seem to be working.
         for gridlayer in self.gridlayers:
             gridlayer.remove_all_qlayers()
 
@@ -313,7 +315,7 @@ class Umbra(Boiler):
                 self.dockwidget = UmbraDockWidget()
 
                 # connect to provide cleanup on closing of dockwidget
-                self.dockwidget.closingDockWidget.connect(self.on_close_dockwidget)
+                # self.dockwidget.closingDockWidget.connect(self.on_close_dockwidget)
 
                 # show the dockwidget
                 self.iface.addDockWidget(Qt.LeftDockWidgetArea, self.dockwidget)
@@ -321,13 +323,17 @@ class Umbra(Boiler):
             print "Done starting"
 
     def dockwidget_hide(self):
-        self.dockwidget.hide()
+        if self.dockwidget is not None:
+            self.dockwidget.hide()
 
     def current_layer_is_umbra(self,clayer=None):
         # moved from tool
         if clayer is None:
             clayer = self.canvas.currentLayer()
-
+            if clayer is None:
+                # NB: possible that a group is selected here, but we
+                # have no way of checking for that.
+                return False
         for gridlayer in self.gridlayers:
             self.log.info('Checking for layers in %s'%gridlayer)
             for layer in gridlayer.layers:
@@ -356,6 +362,8 @@ class Umbra(Boiler):
             return None
         
         clayer = self.canvas.currentLayer()
+        if clayer is None:
+            return None
         log.info("Searching for layer " + str(clayer))
 
         for gridlayer in self.gridlayers:

@@ -10,6 +10,7 @@ from delft import dfm_grid
 from qgis.core import ( QgsGeometry, QgsPoint, QgsFeature,QgsVectorLayer, QgsField,
                         QgsMapLayerRegistry )
 from PyQt4.QtCore import QVariant
+
 import logging
 log=logging.getLogger('umbra.layer')
 
@@ -17,20 +18,27 @@ log=logging.getLogger('umbra.layer')
 # now it manages the layers and data specific to a grid
 
 # Maybe the Undo handling will live here?
-from PyQt4.QtGui import QUndoCommand
+from PyQt4.QtGui import QUndoCommand,QUndoStack
 class GridCommand(QUndoCommand):
-    def __init__(self,g,description="edit grid"):
+    def __init__(self,g,description="edit grid",redo=None):
         super(GridCommand,self).__init__(description)
         self.grid = g
         self.checkpoint = g.checkpoint()
         self.redo_count=0
+        if redo:
+            self.redo_thunk=redo
+        else:
+            self.redo_thunk=None
 
     def undo(self):
-        g.revert(self.checkpoint)
+        self.grid.revert(self.checkpoint)
         
     def redo(self):
         # might be used in the future to allow exactly one redo()
-        self.redo_count+=1
+        if self.redo_thunk is not None:
+            self.redo_thunk()
+        else:
+            self.redo_count+=1
         
 
 class UmbraSubLayer(object):
@@ -391,6 +399,8 @@ class UmbraLayer(object):
         
         self.layers=[] # SubLayer objects associated with this grid.
         self.umbra.register_grid(self)
+        
+        self.undo_stack=QUndoStack()
 
     def match_to_qlayer(self,ql):
         for layer in self.layers:
@@ -482,6 +492,8 @@ class UmbraLayer(object):
         for sublayer in self.layers:
             layers.append( sublayer.qlayer.name() )
         reg=QgsMapLayerRegistry.instance()
+        self.log.info("Found %d layers to remove"%len(layers))
+        
         reg.removeMapLayers(layers)
         
     def distance_to_node(self,pnt,i):
@@ -513,7 +525,71 @@ class UmbraLayer(object):
     def renumber(self):
         self.grid.renumber()
     
+    # thin wrapper to grid editing calls
+    # channel them through here to (a) keep consistent interface
+    # and (b) track undo stacks at the umbra layer level.
 
+    def undo(self):
+        if self.undo_stack.canUndo():
+            self.undo_stack.undo()
+        else:
+            self.log.warning("request for undo, but stack cannot")
+    def redo(self):
+        if self.undo_stack.canRedo():
+            self.undo_stack.redo()
+        else:
+            self.log.warning("request for undo, but stack cannot")
+            
+    def modify_node(self,n,**kw):
+        cmd=GridCommand(self.grid,
+                        "Modify node",
+                        lambda: self.grid.modify_node(n,**kw))
+        self.undo_stack.push(cmd)
 
-# def is_umbra_layer(l):
-#     return isinstance(l,UmbraLayer)
+    def toggle_cell_at_point(self,xy):
+        cmd=GridCommand(self.grid,
+                        "Toggle cell",
+                        lambda: self.grid.toggle_cell_at_point(xy))
+        self.undo_stack.push(cmd)
+        
+    def delete_node(self,n):
+        cmd=GridCommand(self.grid,
+                        "Delete node",
+                        lambda: self.grid.delete_node_cascade(n))
+        self.undo_stack.push(cmd)
+    def delete_edge(self,e):
+        cmd=GridCommand(self.grid,
+                        "Delete edge",
+                        lambda: self.grid.delete_edge_cascade(e))
+        self.undo_stack.push(cmd)
+        
+    def add_edge(self,nodes):
+        self.add_edge_last_id=None
+        def redo():
+            j=self.grid.add_edge(nodes=nodes)
+            self.add_edge_last_id=j
+            
+        cmd=GridCommand(self.grid,"Add edge",redo)
+        self.undo_stack.push(cmd)
+
+        assert self.add_edge_last_id is not None
+        self.log.info("Adding an edge! j=%d"%self.add_edge_last_id)
+
+        return self.add_edge_last_id
+    
+    def add_node(self,x):
+        # awkward jumping through hoops to both use the undo stack
+        # and get the id of a node which was just added
+        self.add_node_last_id=None
+        def redo():
+            n=self.grid.add_node(x=x)
+            self.add_node_last_id=n
+            
+        cmd=GridCommand(self.grid,"Add node",redo)
+        self.undo_stack.push(cmd)
+        
+        assert self.add_node_last_id is not None
+        return self.add_node_last_id
+
+            
+            

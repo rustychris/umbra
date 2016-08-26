@@ -547,6 +547,9 @@ class UmbraLayer(object):
         self.undo_stack.push(cmd)
 
     def toggle_cell_at_point(self,xy):
+        def do_toggle():
+            self.log.info("umbra_layer: toggle cell at %s"%xy)
+            self.grid.toggle_cell_at_point(xy)
         cmd=GridCommand(self.grid,
                         "Toggle cell",
                         lambda: self.grid.toggle_cell_at_point(xy))

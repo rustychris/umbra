@@ -303,8 +303,10 @@ class Umbra(Boiler):
 
             # if this is omitted, be sure to also skip over
             # the disconnects.
-            li=self.iface.legendInterface()
-            li.currentLayerChanged.connect(self.on_layer_changed)
+            # this doesn't seem to really work, and leads to a bunch
+            # of callbacks lying around...
+            #li=self.iface.legendInterface()
+            #li.currentLayerChanged.connect(self.on_layer_changed)
 
     def dockwidget_show(self):
             # dockwidget may not exist if:

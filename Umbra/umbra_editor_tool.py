@@ -184,7 +184,6 @@ class UmbraEditorTool(QgsMapTool):
         map_point = map_to_pixel.toMapCoordinates(pix_x,pix_y)
         map_xy=[map_point.x(),map_point.y()]
         
-        # First, does it fall within an existing cell?
         gl.toggle_cell_at_point(map_xy)
 
     def start_move_node(self,event):

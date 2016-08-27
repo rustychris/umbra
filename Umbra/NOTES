@@ -232,31 +232,19 @@ also an endEditCommand() member function
       Also changed to updating the cell center index instead of rebuilding on every add or delete.
          => much faster now
          => undo/redo at least paints and unpaints the cells.
-         still get the node deletion error.
-
-          removing/unremoving two cells, then remove a node they share => the two cells
-           remain drawn, but the node's other cells disappear.
-          delete_node_cascade does go through the edges to get to the cells, so it's
-          possible that it is failing because edge_to_cells is messed up
-
-          Now I get "Edge has cell neighbors" during the delete_node_cascade.
-          The process here:
-            1. Load grid
-            2. Toggle a couple cells away
-            3. Undo to restore them
-            4. Delete a common node
-            5. Get this error
-     
-  undoStack.clear() will do that.
-
-
+         => now fixed
+         
+ - create new grid (and set a few things like max nodes)
  - saving grids
  - understand feature selections - i.e. for deleting or moving swath of cells.
  - maybe a dockwidget option to show some grid stats?
+ - access to more fields
  - option to change maxnodes?
  - are any of the optimization approaches ready?  From Ed's comments, sounds like
    Janet uses an incremental construction - each pass pushing all of the nodes a bit
-   closer to something like 
+   closer to something like an orthogonal grid.
+
+
 
 
   

@@ -69,8 +69,9 @@ class UmbraSubLayer(object):
 class UmbraNodeLayer(UmbraSubLayer):
     def extend_grid(self):
         g=self.grid
-        g.add_node_field('feat_id',
-                         np.zeros(g.Nnodes(),'i4')-1)
+        if 'feat_id' not in g.nodes.dtype.names:
+            g.add_node_field('feat_id',
+                             np.zeros(g.Nnodes(),'i4')-1)
 
         g.subscribe_after('modify_node',self.on_modify_node)
         g.subscribe_after('add_node',self.on_add_node)
@@ -203,8 +204,9 @@ class UmbraEdgeLayer(UmbraSubLayer):
     def extend_grid(self):
         self.install_edge_quality()
         g=self.grid
-        g.add_edge_field('feat_id',
-                         np.zeros(g.Nedges(),'i4')-1)
+        if 'feat_id' not in g.edges.dtype.names:
+            g.add_edge_field('feat_id',
+                             np.zeros(g.Nedges(),'i4')-1)
         g.subscribe_after('add_edge',self.on_add_edge)
         g.subscribe_before('delete_edge',self.on_delete_edge)
         g.subscribe_after('modify_node',self.on_modify_node)
@@ -293,8 +295,9 @@ class UmbraCellLayer(UmbraSubLayer):
         
     def extend_grid(self):
         g=self.grid
-        g.add_cell_field('feat_id',
-                         np.zeros(g.Ncells(),'i4')-1)
+        if 'feat_id' not in g.cells.dtype.names:
+            g.add_cell_field('feat_id',
+                             np.zeros(g.Ncells(),'i4')-1)
 
         g.subscribe_after('add_cell',self.on_add_cell)
         g.subscribe_before('delete_cell',self.on_delete_cell)
@@ -567,6 +570,10 @@ class UmbraLayer(object):
         self.undo_stack.push(cmd)
         
     def add_edge(self,nodes):
+        if self.grid.nodes_to_edge(*nodes) is not None:
+            self.log.info("Edge already existed, probably")
+            return
+        
         self.add_edge_last_id=None
         def redo():
             j=self.grid.add_edge(nodes=nodes)

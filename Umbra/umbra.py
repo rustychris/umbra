@@ -47,8 +47,9 @@ from qgis.core import QgsPluginLayerRegistry,QgsMapLayerRegistry
 from umbra_dockwidget import UmbraDockWidget
 
 import os.path
-import umbra_openlayer
-import umbra_savelayer
+
+# Import the dialogs:
+from . import (umbra_openlayer, umbra_savelayer, umbra_newlayer)
 
 import unstructured_grid
 
@@ -225,6 +226,13 @@ class Umbra(Boiler):
                         parent=self.iface.mainWindow(),
                         add_to_menu=True,
                         add_to_toolbar=False)
+        
+        self.add_action(icon_path,text='New Umbra layer',
+                        callback=self.new_layer,
+                        parent=self.iface.mainWindow(),
+                        add_to_menu=True,
+                        add_to_toolbar=False)
+        
         self.add_action(icon_path,text='Save Umbra layer',
                         callback=self.save_layer,
                         parent=self.iface.mainWindow(),
@@ -356,8 +364,15 @@ class Umbra(Boiler):
         dialog=umbra_openlayer.UmbraOpenLayer(parent=self.iface.mainWindow(),
                                               iface=self.iface,
                                               umbra=self)
-        dialog.exec_() 
+        dialog.exec_()
 
+    def new_layer(self):
+        self.activate()
+        dialog=umbra_newlayer.UmbraNewLayer(parent=self.iface.mainWindow(),
+                                            iface=self.iface,
+                                            umbra=self)
+        dialog.exec_()
+        
     def active_gridlayer(self):
         if not self.pluginIsActive:
             log.info("active_gridlayer: plugin not active")
@@ -380,7 +395,8 @@ class Umbra(Boiler):
 
         # TODO: probably this gets routed through UmbraLayer?
         dialog=umbra_savelayer.UmbraSaveLayer(parent=self.iface.mainWindow(),
-                                              iface=self.iface)
+                                              iface=self.iface,
+                                              umbra=self)
         dialog.exec_()
     
     def renumber_layer(self):

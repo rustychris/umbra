@@ -234,12 +234,17 @@ also an endEditCommand() member function
          => undo/redo at least paints and unpaints the cells.
          => now fixed
          
- - create new grid (and set a few things like max nodes)
  - saving grids
+   * doesn't handle path selection very well
+   * not graceful when given path doesn't exist
+   * doesn't know that SUNTANS can't write quads (at this time)
+   * untrim doesn't understand pentagons
+   * using a grid loaded from pickle, seems to be missing self.log
+   
  - understand feature selections - i.e. for deleting or moving swath of cells.
  - maybe a dockwidget option to show some grid stats?
  - access to more fields
- - option to change maxnodes?
+ - option to change maxnodes on the fly?
  - are any of the optimization approaches ready?  From Ed's comments, sounds like
    Janet uses an incremental construction - each pass pushing all of the nodes a bit
    closer to something like an orthogonal grid.

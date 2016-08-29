@@ -120,26 +120,26 @@ class UmbraEditorTool(QgsMapTool):
 
         if 'node' in types:
             n=g.select_nodes_nearest(map_xy)
-            node_xy=g.nodes['x'][n]
-            node_pix_point = map_to_pixel.transform(node_xy[0],node_xy[1])
-            dist2= (pix_x-node_pix_point.x())**2 + (pix_y-node_pix_point.y())**2 
-            self.log.info("Distance^2 is %s"%dist2)
-            if dist2<=self.node_click_pixels**2:
-                # back to pixel space to calculate distance
-                res['node']=n
-            else:
-                res['node']=None
+            res['node']=None
+            if n is not None:
+                node_xy=g.nodes['x'][n]
+                node_pix_point = map_to_pixel.transform(node_xy[0],node_xy[1])
+                dist2= (pix_x-node_pix_point.x())**2 + (pix_y-node_pix_point.y())**2 
+                self.log.info("Distance^2 is %s"%dist2)
+                if dist2<=self.node_click_pixels**2:
+                    # back to pixel space to calculate distance
+                    res['node']=n
         if 'edge' in types:
             j=g.select_edges_nearest(map_xy)
-            edge_xy=g.edges_center()[j]
-            edge_pix_point = map_to_pixel.transform(edge_xy[0],edge_xy[1])
-            dist2= (pix_x-edge_pix_point.x())**2 + (pix_y-edge_pix_point.y())**2 
-            self.log.info("Distance^2 is %s"%dist2)
-            if dist2<=self.edge_click_pixels**2:
-                # back to pixel space to calculate distance
-                res['edge']=j
-            else:
-                res['edge']=None
+            res['edge']=None
+            if j is not None:
+                edge_xy=g.edges_center()[j]
+                edge_pix_point = map_to_pixel.transform(edge_xy[0],edge_xy[1])
+                dist2= (pix_x-edge_pix_point.x())**2 + (pix_y-edge_pix_point.y())**2 
+                self.log.info("Distance^2 is %s"%dist2)
+                if dist2<=self.edge_click_pixels**2:
+                    # back to pixel space to calculate distance
+                    res['edge']=j
         self.log.info( "End of event_to_item self=%s"%id(self) )
         return res
         

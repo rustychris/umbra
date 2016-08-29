@@ -1,6 +1,6 @@
 """
 /***************************************************************************
- UmbraSaveLayer
+ UmbraOpenLayer
                                  A QGIS plugin
  Unstructured mesh builder
                              -------------------
@@ -23,81 +23,43 @@
 import os
 
 from PyQt4 import QtGui, uic
-from PyQt4.QtCore import pyqtSignal
+from PyQt4.QtCore import pyqtSignal #, QMetaObject
+
+from qgis.core import QgsPluginLayerRegistry,QgsMapLayerRegistry
 
 FORM_CLASS, base_class = uic.loadUiType(os.path.join(
-    os.path.dirname(__file__), 'umbra_savelayer_base.ui'))
+    os.path.dirname(__file__), 'umbra_newlayer_base.ui'))
 
+import umbra_layer
 import umbra_common
-from delft import dfm_grid
+import unstructured_grid
 
-class UmbraSaveLayer(base_class, FORM_CLASS):
+class UmbraNewLayer(base_class, FORM_CLASS):
 
     def __init__(self, parent=None, iface=None, umbra=None):
         """Constructor."""
-        super(UmbraSaveLayer, self).__init__(parent)
+        super(UmbraNewLayer, self).__init__(parent)
         # Set up the user interface from Designer.
         # After setupUI you can access any designer object by doing
         # self.<objectname>, and you can use autoconnect slots - see
         # http://qt-project.org/doc/qt-4.8/designer-using-a-ui-file.html
         # #widgets-and-dialogs-with-auto-connect
-        self.iface=iface
         self.umbra=umbra
+        self.iface=iface
 
         self.setupUi(self)
 
-        for fmt in umbra_common.ug_formats:
-            self.formatCombo.addItem(fmt['long_name'])
-        
-        self.browseButton.clicked.connect(self.on_browse)
         self.buttonBox.accepted.connect(self.on_ok_clicked)
         self.buttonBox.rejected.connect(self.on_cancel_clicked)
 
-    def on_browse(self):
-        fmt=self.fmt()
-
-        if fmt['is_dir']:
-            path=QtGui.QFileDialog.getExistingDirectory(self,'Folder for %s'%fmt['name'],
-                                                        os.environ['HOME'])
-        else:
-            path=QtGui.QFileDialog.getSaveFileName(self, 'Filename for %s'%fmt['name'], 
-                                                   os.environ['HOME'])
-        print "Filename ",path
-        if path is not None:
-            self.lineEdit.setText( path )
-        return True 
-        
-    def fmt(self): # should be abstracted to common class
-        sel=self.formatCombo.currentText()
-
-        for fmt in umbra_common.ug_formats:
-            if sel==fmt['long_name']:
-                return fmt
-
-        assert False
-        
     def on_ok_clicked(self):
-        path=self.lineEdit.text()
-        fmt=self.fmt()
-        print "Would be saving to ",path
+        max_sides=self.max_sides.value()
 
-        grid=self.umbra.current_grid()
-        if grid is None:
-            print "No grid selected?!"
-            return
-
-        if fmt['name']=='SUNTANS':
-            grid.write_suntans(path)
-        elif fmt['name']=='pickle':
-            grid.write_pickle(path)
-        elif fmt['name']=='UGRID':
-            grid.write_ugrid(path)
-        elif fmt['name']=='DFM':
-            dfm_grid.write_dfm(grid,path)
-        elif fmt['name']=='UnTRIM':
-            grid.write_untrim08(path)
-
+        g=unstructured_grid.UnstructuredGrid(max_sides=max_sides)
+        my_layer = umbra_layer.UmbraLayer(umbra=self.umbra,grid=g)
+        my_layer.register_layers()
+        
     def on_cancel_clicked(self):
-        pass
+        print "Cancel!"
 
 

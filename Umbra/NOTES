@@ -242,6 +242,11 @@ also an endEditCommand() member function
    * doesn't know that SUNTANS can't write quads (at this time)
    * untrim doesn't understand pentagons
 
+ - after a bit of editing, got into an invalid state where the deletion mark on 
+   some cells was off.  not clear exactly what was going on.  saved in sun_quads3.pkl
+
+
+
  - on OSX, the double-tap for delete can be confused with the start of a
    two-finger drag for zooming.  This is what causes the freak loss of elements.
  

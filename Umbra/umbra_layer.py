@@ -95,7 +95,8 @@ class UmbraNodeLayer(UmbraSubLayer):
         # takes an existing point memory layer, adds in nodes from g
         feats=[]
         valid=[]
-        for n in range(self.grid.Nnodes()):
+        #for n in range(self.grid.Nnodes()): # why was I using this???
+        for n in self.grid.valid_node_iter():
             valid.append(n)
             geom = self.node_geometry(n)
             feat = QgsFeature() # can't set feature_ids

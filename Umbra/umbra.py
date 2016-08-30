@@ -195,11 +195,16 @@ class Boiler(object):
         return action
 
 
+the_umbra=None
+
 class Umbra(Boiler):
     """  
     Core more specific to the Umbra plugin
     """ 
     def __init__(self, iface):
+        global the_umbra
+        the_umbra=self
+        
         self.log=log
         super(Umbra,self).__init__(iface)
         self.log.info('Firing up Umbra')

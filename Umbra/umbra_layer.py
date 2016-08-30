@@ -42,11 +42,12 @@ class GridCommand(QUndoCommand):
         
 
 class UmbraSubLayer(object):
-    def __init__(self,log,grid,crs):
+    def __init__(self,log,grid,crs,prefix):
         self.log=log
         self.grid=grid
         self.extend_grid()
         self.crs=crs
+        self.prefix=prefix
         self.qlayer=self.create_qlayer()
         self.populate_qlayer()
 
@@ -84,7 +85,7 @@ class UmbraNodeLayer(UmbraSubLayer):
         g.unsubscribe_before('delete_node',self.on_delete_node)
         
     def create_qlayer(self):
-        return QgsVectorLayer("Point"+self.crs, "nodes", "memory")
+        return QgsVectorLayer("Point"+self.crs, self.prefix+"-nodes", "memory")
 
     def populate_qlayer(self):
         layer=self.qlayer
@@ -131,7 +132,7 @@ class UmbraNodeLayer(UmbraSubLayer):
 
 class UmbraEdgeLayer(UmbraSubLayer):
     def create_qlayer(self):
-        qlayer=QgsVectorLayer("LineString"+self.crs,"edges","memory")
+        qlayer=QgsVectorLayer("LineString"+self.crs,self.prefix+"-edges","memory")
         
         pr = qlayer.dataProvider()
 
@@ -291,7 +292,7 @@ class UmbraEdgeLayer(UmbraSubLayer):
 
 class UmbraCellLayer(UmbraSubLayer):
     def create_qlayer(self):
-        return QgsVectorLayer("Polygon"+self.crs,"cells","memory")
+        return QgsVectorLayer("Polygon"+self.crs,self.prefix+"-cells","memory")
         
     def extend_grid(self):
         g=self.grid
@@ -372,8 +373,10 @@ class UmbraCellLayer(UmbraSubLayer):
     
 class UmbraLayer(object):
     count=0
+
+    layer_count=0
     
-    def __init__(self,umbra,grid):
+    def __init__(self,umbra,grid,name=None):
         """
         Does not add the layers to the GUI - call register_layers
         for that.
@@ -399,13 +402,22 @@ class UmbraLayer(object):
         self.grid=grid
 
         self.iface=None # gets set in register_layers
-        
+
+        UmbraLayer.layer_count+=1
+
+        if name is None:
+            name="grid%d"%UmbraLayer.layer_count
+        self.name=name 
+
         self.layers=[] # SubLayer objects associated with this grid.
         self.umbra.register_grid(self)
         
         self.undo_stack=QUndoStack()
 
     def match_to_qlayer(self,ql):
+        # need to either make the names unique, or find a better test.
+        # since we can't really enforce the grouped layout, better to make the names
+        # unique.
         for layer in self.layers:
             if layer.qlayer.name() == ql.name():
                 return True
@@ -475,15 +487,18 @@ class UmbraLayer(object):
 
         self.register_layer( UmbraNodeLayer(self.log,
                                             self.grid,
-                                            crs=crs) )
+                                            crs=crs,
+                                            prefix=self.name) )
 
         self.register_layer( UmbraEdgeLayer(self.log,
                                             self.grid,
-                                            crs=crs) )
+                                            crs=crs,
+                                            prefix=self.name) )
         
         self.register_layer( UmbraCellLayer(self.log,
                                             self.grid,
-                                            crs=crs) )
+                                            crs=crs,
+                                            prefix=self.name) )
         
 
         # set extent to the extent of our layer

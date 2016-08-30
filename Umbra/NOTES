@@ -234,13 +234,17 @@ also an endEditCommand() member function
          => undo/redo at least paints and unpaints the cells.
          => now fixed
          
+   
  - saving grids
    * doesn't handle path selection very well
+   * save should remember previously used path
    * not graceful when given path doesn't exist
    * doesn't know that SUNTANS can't write quads (at this time)
    * untrim doesn't understand pentagons
-   * using a grid loaded from pickle, seems to be missing self.log
-   
+
+ - on OSX, the double-tap for delete can be confused with the start of a
+   two-finger drag for zooming.  This is what causes the freak loss of elements.
+ 
  - understand feature selections - i.e. for deleting or moving swath of cells.
  - maybe a dockwidget option to show some grid stats?
  - access to more fields

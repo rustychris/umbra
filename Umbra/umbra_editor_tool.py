@@ -281,11 +281,11 @@ class UmbraEditorTool(QgsMapTool):
     def keyPressEvent(self,event):
         super(UmbraEditorTool,self).keyPressEvent(event)
         key=event.key()
+        txt=event.text()
         
-        self.log.info("keyPress %r %s"%(key,event.text()) )
+        self.log.info("keyPress %r %s"%(key,txt) )
         # weird, but seems that shift comes through, but not 
         # space??  doesn't even show up.
-        txt=event.text()
         
         if txt == ' ':
             self.toggle_cell(event)
@@ -293,6 +293,16 @@ class UmbraEditorTool(QgsMapTool):
             self.undo()
         elif txt == 'Z':
             self.redo()
+        elif key == Qt.Key_Delete:
+            # A little shaky here, but I think the idea is that
+            # we accept it if we handle it, which is good b/c 
+            # otherwise qgis will complain that the layer isn't editable.
+            if self.delete(event):
+                self.log.info("Trying to accept this Delete event")
+                event.accept()
+            else:
+                self.log.info("Ignoring this Delete event")
+                event.ignore()
 
     def keyReleaseEvent(self,event):
         super(UmbraEditorTool,self).keyReleaseEvent(event)
@@ -304,6 +314,13 @@ class UmbraEditorTool(QgsMapTool):
         # seems like intercepting a shift could get us into trouble
         # ignore() lets it percolate to other interested parties
         event.ignore()
+
+    def delete(self,event):
+        gl=self.gridlayer()
+        if gl is not None:
+            gl.delete_selected()
+            return True
+        return False
 
     def undo(self):
         self.log.info('got request for undo')

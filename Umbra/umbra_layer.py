@@ -8,7 +8,8 @@ import numpy as np
 from delft import dfm_grid
 
 from qgis.core import ( QgsGeometry, QgsPoint, QgsFeature,QgsVectorLayer, QgsField,
-                        QgsMapLayerRegistry )
+                        QgsMapLayerRegistry, 
+                        QgsMarkerSymbolV2, QgsLineSymbolV2, QgsFillSymbolV2 )
 from PyQt4.QtCore import QVariant
 
 import logging
@@ -42,9 +43,10 @@ class GridCommand(QUndoCommand):
         
 
 class UmbraSubLayer(object):
-    def __init__(self,log,grid,crs,prefix):
+    def __init__(self,log,grid,crs,prefix,tag=None):
         self.log=log
         self.grid=grid
+        self.tag=tag
         self.extend_grid()
         self.crs=crs
         self.prefix=prefix
@@ -65,7 +67,8 @@ class UmbraSubLayer(object):
         remove those callbacks or additional fields
         """
         pass
-    
+    def selection(self):
+        return []
         
 class UmbraNodeLayer(UmbraSubLayer):
     def extend_grid(self):
@@ -85,7 +88,15 @@ class UmbraNodeLayer(UmbraSubLayer):
         g.unsubscribe_before('delete_node',self.on_delete_node)
         
     def create_qlayer(self):
-        return QgsVectorLayer("Point"+self.crs, self.prefix+"-nodes", "memory")
+        layer= QgsVectorLayer("Point"+self.crs, self.prefix+"-nodes", "memory")
+        # nice clean black dot
+        symbol = QgsMarkerSymbolV2.createSimple({'outline_style':'no',
+                                                 'name': 'circle', 
+                                                 'size_unit':'MM',
+                                                 'size':'1',
+                                                 'color': 'black'})
+        layer.rendererV2().setSymbol(symbol)
+        return layer
 
     def populate_qlayer(self):
         layer=self.qlayer
@@ -165,6 +176,12 @@ class UmbraEdgeLayer(UmbraSubLayer):
         pr.addAttributes(e_attrs)
         qlayer.updateFields() # tell the vector layer to fetch changes from the provider
         
+        # clean, thin black style
+        symbol = QgsLineSymbolV2.createSimple({'line_style':'solid',
+                                                 'line_width':'0.2',
+                                                 'line_width_unit':'MM',
+                                                 'line_color': 'black'})
+        qlayer.rendererV2().setSymbol(symbol)
         return qlayer
 
     def populate_qlayer(self):
@@ -293,7 +310,14 @@ class UmbraEdgeLayer(UmbraSubLayer):
 
 class UmbraCellLayer(UmbraSubLayer):
     def create_qlayer(self):
-        return QgsVectorLayer("Polygon"+self.crs,self.prefix+"-cells","memory")
+        layer=QgsVectorLayer("Polygon"+self.crs,self.prefix+"-cells","memory")
+        # transparent red, no border
+        # but this is the wrong class...
+        symbol = QgsFillSymbolV2.createSimple({'outline_style':'no',
+                                               'style':'solid',
+                                               'color': '249,0,0,78'})
+        layer.rendererV2().setSymbol(symbol)
+        return layer
         
     def extend_grid(self):
         g=self.grid
@@ -371,6 +395,18 @@ class UmbraCellLayer(UmbraSubLayer):
             valid.append(i)
         (res, outFeats) = layer.dataProvider().addFeatures(feats)
         self.grid.cells['feat_id'][valid]=[f.id() for f in outFeats]
+
+    def selection(self):
+        # these are feature ids...
+        cell_feat_ids=[feat.id()
+                       for feat in self.qlayer.selectedFeatures()]
+        cell_feat_ids=set(cell_feat_ids)
+
+        selected=[]
+        for c in range(self.grid.Ncells()):
+            if self.grid.cells['feat_id'][c] in cell_feat_ids:
+                selected.append(c)
+        return selected
     
 class UmbraLayer(object):
     count=0
@@ -475,6 +511,12 @@ class UmbraLayer(object):
         li=self.iface.legendInterface()
         li.moveLayer(sublayer.qlayer,self.group_index)
 
+    def layer_by_tag(self,tag):
+        for layer in self.layers:
+            if layer.tag == tag:
+                return layer
+        return None
+
     def create_group(self):
         # Create a group for the layers -
         li=self.iface.legendInterface()
@@ -486,22 +528,24 @@ class UmbraLayer(object):
         self.iface=self.umbra.iface
         self.create_group()
 
-        self.register_layer( UmbraNodeLayer(self.log,
+        self.register_layer( UmbraCellLayer(self.log,
                                             self.grid,
                                             crs=crs,
-                                            prefix=self.name) )
+                                            prefix=self.name,
+                                            tag='cells') )
 
         self.register_layer( UmbraEdgeLayer(self.log,
                                             self.grid,
                                             crs=crs,
-                                            prefix=self.name) )
-        
-        self.register_layer( UmbraCellLayer(self.log,
+                                            prefix=self.name,
+                                            tag='edges' ) )
+
+        self.register_layer( UmbraNodeLayer(self.log,
                                             self.grid,
                                             crs=crs,
-                                            prefix=self.name) )
+                                            prefix=self.name,
+                                            tag='nodes') )
         
-
         # set extent to the extent of our layer
         # skip while developing
         # canvas.setExtent(layer.extent())
@@ -617,5 +661,13 @@ class UmbraLayer(object):
         assert self.add_node_last_id is not None
         return self.add_node_last_id
 
-            
-            
+    def delete_selected(self):
+        cell_layer=self.layer_by_tag('cells')
+        if cell_layer is not None:
+            selected_cells = cell_layer.selection()
+            self.log.info("Found %d selected cells"%len(selected_cells))
+            def redo(cells=selected_cells): # pass this way b/c of python bindings weirdness
+                for c in cells:
+                    self.grid.delete_cell(c)
+            cmd=GridCommand(self.grid,"Delete cells",redo)
+            self.undo_stack.push(cmd)

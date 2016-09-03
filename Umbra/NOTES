@@ -250,7 +250,12 @@ also an endEditCommand() member function
  - on OSX, the double-tap for delete can be confused with the start of a
    two-finger drag for zooming.  This is what causes the freak loss of elements.
  
- - understand feature selections - i.e. for deleting or moving swath of cells.
+ - understand feature selections - for starters, for deleting a group of nodes/edges/cells
+   - do we get Delete key events? yes - although QGIS tries to handle it, too.
+
+ - option to load multiple grids and merge them
+   - probably requires a dialog, options for things like the tolerance for merging nodes
+
  - maybe a dockwidget option to show some grid stats?
  - access to more fields
  - option to change maxnodes on the fly?

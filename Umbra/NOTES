@@ -258,10 +258,14 @@ also an endEditCommand() member function
 
  - maybe a dockwidget option to show some grid stats?
  - access to more fields
+   - this is also key to being able to toggle nodes to fixed, sliding, etc.
+   
  - option to change maxnodes on the fly?
  - are any of the optimization approaches ready?  From Ed's comments, sounds like
    Janet uses an incremental construction - each pass pushing all of the nodes a bit
    closer to something like an orthogonal grid.
+
+ - port tom to unstructured_grid
 
 
 

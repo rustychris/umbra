@@ -10,3 +10,9 @@ On top of that, QgsMapCanvas holds a reference to the tool.
 And that is probably bad - because MapCanvas will continue to
 call any callbacks.
 
+Adding cell-center plotting - done, but needs UI integration
+
+Renumbering?
+  - it's in there, but untested.
+  - 
+

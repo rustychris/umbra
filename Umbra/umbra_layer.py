@@ -1,11 +1,8 @@
 import os
 import sys
-sys.path.append( os.path.join(os.environ["HOME"],"python") )
-
-from   unstructured_grid import mag
-import unstructured_grid
 import numpy as np
-from delft import dfm_grid
+
+sys.path.append( os.path.join(os.environ["HOME"],"python") )
 
 from qgis.core import ( QgsGeometry, QgsPoint, QgsFeature,QgsVectorLayer, QgsField,
                         QgsMapLayerRegistry, 
@@ -14,6 +11,16 @@ from PyQt4.QtCore import QVariant
 
 import logging
 log=logging.getLogger('umbra.layer')
+
+if 0: # old installation
+    from   unstructured_grid import mag
+    import unstructured_grid
+    from delft import dfm_grid
+else:
+    from stompy.grid import unstructured_grid 
+    from stompy.utils import mag
+    from stompy.model.delft import dfm_grid
+
 
 # Used to be a QgsPluginLayer, but no more.
 # now it manages the layers and data specific to a grid
@@ -407,6 +414,56 @@ class UmbraCellLayer(UmbraSubLayer):
             if self.grid.cells['feat_id'][c] in cell_feat_ids:
                 selected.append(c)
         return selected
+
+
+class UmbraCellCenterLayer(UmbraCellLayer):
+    """
+    First try at additional derived layers
+    """
+    def create_qlayer(self):
+        layer=QgsVectorLayer("Point"+self.crs,self.prefix+"-centers","memory")
+
+        symbol = QgsMarkerSymbolV2.createSimple({'outline_style':'no',
+                                                 'name': 'circle', 
+                                                 'size_unit':'MM',
+                                                 'size':'1',
+                                                 'color': 'green'})
+        layer.rendererV2().setSymbol(symbol)
+        return layer
+        
+    # def extend_grid(self): same as UmbraCellLayer
+    # def unextend_grid(self): # same as UmbraCellLayer
+    # def on_delete_cell(self,g,func_name,c,**k): # same as UmbraCellLayer
+
+    # def on_modify_node(self,g,func_name,n,**k):
+    #     if 'x' not in k:
+    #         return
+    #     
+    #     cell_changes={}
+    #     cells=self.grid.node_to_cells(n)
+    #     self.grid.cells_center(refresh=cells) # potentially redundant 
+    # 
+    #     # dropped an odd reference to the edges - see CellLayer.  
+    #     for i in cells:
+    #         fid=self.grid.cells[i]['feat_id']
+    #         geom=self.cell_geometry(i)
+    #         cell_changes[fid]=geom
+    #     self.qlayer.dataProvider().changeGeometryValues(cell_changes)
+    #     self.qlayer.triggerRepaint()
+
+    # def on_add_cell(self,g,func_name,return_value,**k): # Same as CellLayer
+         
+    def cell_geometry(self,i):
+        pnts=[QgsPoint(self.grid.nodes['x'][n,0],
+                       self.grid.nodes['x'][n,1])
+              for n in self.grid.cell_to_nodes(i)]
+        cc=self.grid.cells_center()
+        return QgsGeometry.fromPoint( QgsPoint(cc[i,0],cc[i,1]) )
+
+    # def populate_qlayer(self): # same as cell Layer
+
+    # def selection(self): # same as Cell Layer
+
     
 class UmbraLayer(object):
     count=0
@@ -533,6 +590,12 @@ class UmbraLayer(object):
                                             crs=crs,
                                             prefix=self.name,
                                             tag='cells') )
+
+        self.register_layer( UmbraCellCenterLayer(self.log,
+                                                  self.grid,
+                                                  crs=crs,
+                                                  prefix=self.name,
+                                                  tag='centers') )
 
         self.register_layer( UmbraEdgeLayer(self.log,
                                             self.grid,

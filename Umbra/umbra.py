@@ -51,7 +51,7 @@ import os.path
 # Import the dialogs:
 from . import (umbra_openlayer, umbra_savelayer, umbra_newlayer)
 
-import unstructured_grid
+from stompy.grid import unstructured_grid
 
 import umbra_layer
 import umbra_editor_tool

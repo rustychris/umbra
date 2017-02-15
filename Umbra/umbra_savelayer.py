@@ -29,7 +29,7 @@ FORM_CLASS, base_class = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'umbra_savelayer_base.ui'))
 
 import umbra_common
-from delft import dfm_grid
+from stompy.model.delft import dfm_grid
 
 class UmbraSaveLayer(base_class, FORM_CLASS):
 
@@ -79,7 +79,6 @@ class UmbraSaveLayer(base_class, FORM_CLASS):
     def on_ok_clicked(self):
         path=self.lineEdit.text()
         fmt=self.fmt()
-        print "Would be saving to ",path
 
         grid=self.umbra.current_grid()
         if grid is None:

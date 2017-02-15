@@ -10,7 +10,6 @@ log=logging.getLogger('umbra.editor')
 import umbra_layer 
 
 import numpy as np
-# import dock_tools
 
 class UmbraEditorTool(QgsMapTool):
     node_click_pixels=10
@@ -112,7 +111,7 @@ class UmbraEditorTool(QgsMapTool):
         
         map_point = map_to_pixel.toMapCoordinates(pix_x,pix_y)
         map_xy=[map_point.x(),map_point.y()]
-        res={}
+        res=dict(node=None,edge=None,cell=None)
         g=self.grid()
         if g is None:
             log.info("event_to_item: no grid available")

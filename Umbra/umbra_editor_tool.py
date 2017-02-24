@@ -285,6 +285,8 @@ class UmbraEditorTool(QgsMapTool):
         self.log.info("keyPress %r %s"%(key,txt) )
         # weird, but seems that shift comes through, but not 
         # space??  doesn't even show up.
+
+        # Might want to add 'm' for merge selected nodes?
         
         if txt == ' ':
             self.toggle_cell(event)

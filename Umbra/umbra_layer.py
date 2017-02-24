@@ -149,6 +149,28 @@ class UmbraNodeLayer(UmbraSubLayer):
         return QgsGeometry.fromPoint(QgsPoint(self.grid.nodes['x'][n,0],
                                               self.grid.nodes['x'][n,1]))
 
+    def selection(self):
+        # these are feature ids...
+        node_feat_ids=[feat.id()
+                       for feat in self.qlayer.selectedFeatures()]
+        node_feat_ids=set(node_feat_ids)
+
+        selected=[]
+        for n in range(self.grid.Nnodes()):
+            if self.grid.nodes['feat_id'][n] in node_feat_ids:
+                selected.append(n)
+        return selected
+
+    def join_selected(self):
+        return
+        nodes=self.selection()
+        # work out the kinks before dealing with more than two.
+        # Seems that unstructured_grid isn't actually ready for this,
+        # but has many of the pieces
+        self.grid.merge_nodes(nodes[0],nodes[1])
+        
+
+
 class UmbraEdgeLayer(UmbraSubLayer):
     def create_qlayer(self):
         qlayer=QgsVectorLayer("LineString"+self.crs,self.prefix+"-edges","memory")

@@ -249,8 +249,14 @@ class Umbra(Boiler):
                         add_to_menu=True,
                         add_to_toolbar=False)
 
-        self.add_action(icon_path,text='Delete nodes by polygon',
-                        callback=self.delete_nodes_by_polygon,
+        # self.add_action(icon_path,text='Delete nodes by polygon',
+        #                 callback=self.delete_nodes_by_polygon,
+        #                 parent=self.iface.mainWindow(),
+        #                 add_to_menu=True,
+        #                 add_to_toolbar=False)
+
+        self.add_action(icon_path,text='Show cell centers',
+                        callback=self.show_cell_centers,
                         parent=self.iface.mainWindow(),
                         add_to_menu=True,
                         add_to_toolbar=False)
@@ -410,8 +416,13 @@ class Umbra(Boiler):
             return
         glayer.grid.renumber()
 
-    def delete_nodes_by_polygon(self):
-        pass
+    #def delete_nodes_by_polygon(self):
+    #    pass
+
+    def show_cell_centers(self):
+        glayer = self.active_gridlayer()
+        if glayer is not None:
+            glayer.add_centers_layer()
 
     def enable_tool(self):
         log.info("Enabled umbra mapTool")

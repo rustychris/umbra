@@ -285,6 +285,8 @@ class UmbraEditorTool(QgsMapTool):
         self.log.info("keyPress %r %s"%(key,txt) )
         # weird, but seems that shift comes through, but not 
         # space??  doesn't even show up.
+        # Pressing 'delete' on mac seems to give 16777219, "^H"
+        # that sounds like backspace rather than delete.
 
         # Might want to add 'm' for merge selected nodes?
         
@@ -294,7 +296,7 @@ class UmbraEditorTool(QgsMapTool):
             self.undo()
         elif txt == 'Z':
             self.redo()
-        elif key == Qt.Key_Delete:
+        elif key == Qt.Key_Delete or key == Qt.Key_Backspace:
             # A little shaky here, but I think the idea is that
             # we accept it if we handle it, which is good b/c 
             # otherwise qgis will complain that the layer isn't editable.

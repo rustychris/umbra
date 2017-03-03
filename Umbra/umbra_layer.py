@@ -491,6 +491,7 @@ class UmbraLayer(object):
     count=0
 
     layer_count=0
+    crs="?crs=epsg:26910" # was 4326
     
     def __init__(self,umbra,grid,name=None):
         """
@@ -603,38 +604,39 @@ class UmbraLayer(object):
         self.group_index=li.addGroup(grp_name)
         
     def register_layers(self):
-        crs="?crs=epsg:26910" # was 4326
         self.iface=self.umbra.iface
         self.create_group()
 
         self.register_layer( UmbraCellLayer(self.log,
                                             self.grid,
-                                            crs=crs,
+                                            crs=self.crs,
                                             prefix=self.name,
                                             tag='cells') )
 
-        self.register_layer( UmbraCellCenterLayer(self.log,
-                                                  self.grid,
-                                                  crs=crs,
-                                                  prefix=self.name,
-                                                  tag='centers') )
-
         self.register_layer( UmbraEdgeLayer(self.log,
                                             self.grid,
-                                            crs=crs,
+                                            crs=self.crs,
                                             prefix=self.name,
                                             tag='edges' ) )
 
         self.register_layer( UmbraNodeLayer(self.log,
                                             self.grid,
-                                            crs=crs,
+                                            crs=self.crs,
                                             prefix=self.name,
                                             tag='nodes') )
         
         # set extent to the extent of our layer
         # skip while developing
         # canvas.setExtent(layer.extent())
+        
+    def add_centers_layer(self):
+        self.register_layer( UmbraCellCenterLayer(self.log,
+                                                  self.grid,
+                                                  crs=self.crs,
+                                                  prefix=self.name,
+                                                  tag='centers') )
 
+        
     def remove_all_qlayers(self):
         layers=[]
         for sublayer in self.layers:
@@ -747,12 +749,38 @@ class UmbraLayer(object):
         return self.add_node_last_id
 
     def delete_selected(self):
-        cell_layer=self.layer_by_tag('cells')
-        if cell_layer is not None:
-            selected_cells = cell_layer.selection()
-            self.log.info("Found %d selected cells"%len(selected_cells))
-            def redo(cells=selected_cells): # pass this way b/c of python bindings weirdness
-                for c in cells:
+        layer=self.layer_by_tag('cells')
+        if layer is not None:
+            selected = layer.selection()
+            self.log.info("Found %d selected cells"%len(selected))
+            def redo(selected=selected): # pass this way b/c of python bindings weirdness
+                for c in selected:
                     self.grid.delete_cell(c)
-            cmd=GridCommand(self.grid,"Delete cells",redo)
+            cmd=GridCommand(self.grid,"Delete items",redo)
             self.undo_stack.push(cmd)
+        else:
+            self.log.info("delete_selected: didn't find layer!")
+
+        layer=self.layer_by_tag('edges')
+        if layer is not None:
+            selected = layer.selection()
+            self.log.info("Found %d selected cells"%len(selected))
+            def redo(selected=selected): # pass this way b/c of python bindings weirdness
+                for c in selected:
+                    self.grid.delete_edge_cascade(c)
+            cmd=GridCommand(self.grid,"Delete edges",redo)
+            self.undo_stack.push(cmd)
+        else:
+            self.log.info("delete_selected: didn't find edge layer!")
+        
+        layer=self.layer_by_tag('nodes')
+        if layer is not None:
+            selected = layer.selection()
+            self.log.info("Found %d selected cells"%len(selected))
+            def redo(selected=selected): # pass this way b/c of python bindings weirdness
+                for c in selected:
+                    self.grid.delete_node_cascade(c)
+            cmd=GridCommand(self.grid,"Delete nodes",redo)
+            self.undo_stack.push(cmd)
+        else:
+            self.log.info("delete_selected: didn't find node layer!")

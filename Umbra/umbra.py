@@ -33,7 +33,6 @@ else:
 ch.setLevel(logging.DEBUG)
 ch.setFormatter(fmter)
 log.addHandler(ch)
-# NOT WORKING
 log.info('Loading umbra')
     
 from PyQt4.QtCore import QSettings, QTranslator, qVersion, QCoreApplication, Qt
@@ -49,12 +48,13 @@ from umbra_dockwidget import UmbraDockWidget
 import os.path
 
 # Import the dialogs:
-from . import (umbra_openlayer, umbra_savelayer, umbra_newlayer)
+from . import (umbra_openlayer, umbra_savelayer, umbra_newlayer, combine_grids)
 
 from stompy.grid import unstructured_grid
 
 import umbra_layer
 import umbra_editor_tool
+
 
 if 0: # not sure if this is messing things up. doesn't seem to matter.
     reload(umbra_openlayer)
@@ -255,6 +255,12 @@ class Umbra(Boiler):
         #                 add_to_menu=True,
         #                 add_to_toolbar=False)
 
+        self.add_action(icon_path,text="Combine grids",
+                        callback=self.show_combine_grids,
+                        parent=self.iface.mainWindow(),
+                        add_to_menu=True,
+                        add_to_toolbar=False)
+        
         self.add_action(icon_path,text='Show cell centers',
                         callback=self.show_cell_centers,
                         parent=self.iface.mainWindow(),
@@ -399,6 +405,12 @@ class Umbra(Boiler):
                 return gridlayer
         return None
 
+    def show_combine_grids(self):
+        dialog=combine_grids.CombineGrids(parent=self.iface.mainWindow(),
+                                          iface=self.iface,
+                                          umbra=self)
+        dialog.exec_()
+    
     def save_layer(self):
         glayer = self.active_gridlayer()
         if glayer is None:
@@ -435,6 +447,17 @@ class Umbra(Boiler):
 
     def register_grid(self,ul):
         self.gridlayers.append(ul)
+
+    def grid_names(self):
+        return [gl.name
+                for gl in self.gridlayers]
+
+    def name_to_grid(self,name):
+        for gl in self.gridlayers:
+            if gl.name==name:
+                return gl
+        return None
+        
         
     def on_layer_changed(self,layer):
         if layer is not None:

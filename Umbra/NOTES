@@ -271,6 +271,34 @@ also an endEditCommand() member function
 
 2017-03-02
 
+Unstable...
+
+How to show dynamic edge/cell quality metrics?
+ - edges and cells both watch for nodes moving.
+ - some metrics are edge-centered, though depend on the geometry of cells
+ - some metrics are cell-centered.
+ - cells have some additional state, i.e. cell center, which might be cached.
+   so we'd rather not do too much in an edge callback, since it may happen before
+   the cell callback, and would be operating on bad information.
+ - the cell callback currently recalculates cell centers
+
+
+Putting all of the work in the cell layer would be one approach.
+The parent UmbraLayer might need to coordinate the choice of metrics.
+
+ - seems like edge_quality is not getting updated.  maybe it should be
+   handled in the CellLayer::on_modify_node?  that's not great...
+   fine for updating the field, but the gui update is tricky...
+   maybe the most appropriate thing would be to have the parent layer
+   install a callback on the grid which recalculates those quality
+   parameters, and explicitly calls modify_cell and modify_edge with
+   updated quality numbers.
+   
+   
+ - and after some mucking around, trying to add an edge crashed qgis.
+
+   
+ 
 
 
 

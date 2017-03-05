@@ -141,7 +141,19 @@ class UmbraEditorTool(QgsMapTool):
                     res['edge']=j
         self.log.info( "End of event_to_item self=%s"%id(self) )
         return res
-        
+
+    # Bindings:
+    # left mouse drag => move node
+    # left mouse with shift => add edge and/or node
+    # left mouse with control => toggle cell
+    # Right mouse => delete edge/node
+    # space: supposedly toggle cell
+    # 'z': undo
+    # 'Z': redo
+    # 'm': try to merge nodes of selected edge
+    # Delete or backspace: delete selected elements
+    # What would be good for merging nodes?
+    #  could draw an edge, then have a key for merging nodes
     def canvasPressEvent(self, event):
         super(UmbraEditorTool,self).canvasPressEvent(event)
 
@@ -163,15 +175,8 @@ class UmbraEditorTool(QgsMapTool):
 
         self.log.info("Press event end")
 
-    def toggle_cell(self,event):
-        gl=self.gridlayer()
-        if gl is None:
-            return
-        
-        self.log.info("Got a toggle cell event")
+    def event_to_map_xy(self,event):
         if isinstance(event,QKeyEvent): 
-            # if called with a keypress event, but that wasn't working...
-            # A little trickier, because event here is a keypress (space bar)
             mouse_pnt=self.canvas.mouseLastXY()
         else:
             # from a mouse event
@@ -182,6 +187,29 @@ class UmbraEditorTool(QgsMapTool):
         map_to_pixel=self.canvas.getCoordinateTransform()
         map_point = map_to_pixel.toMapCoordinates(pix_x,pix_y)
         map_xy=[map_point.x(),map_point.y()]
+        return map_xy
+
+    def merge_nodes_of_edge(self,event):
+        gl=self.gridlayer()
+        if gl is None:
+            return
+        
+        self.log.info("Merging nodes of edge?")
+        
+        items=self.event_to_item(event,types=['edge'])
+        if items['edge'] is not None:
+            gl.merge_nodes_of_edge(items['edge'])
+            self.clear_op() # safety first
+        else:
+            self.log.info("no feature hits")
+        
+    def toggle_cell(self,event):
+        gl=self.gridlayer()
+        if gl is None:
+            return
+        
+        self.log.info("Got a toggle cell event")
+        map_xy=self.event_to_map_xy(event)
         
         gl.toggle_cell_at_point(map_xy)
 
@@ -296,6 +324,8 @@ class UmbraEditorTool(QgsMapTool):
             self.undo()
         elif txt == 'Z':
             self.redo()
+        elif txt == 'm':
+            self.merge_nodes_of_edge(event)
         elif key == Qt.Key_Delete or key == Qt.Key_Backspace:
             # A little shaky here, but I think the idea is that
             # we accept it if we handle it, which is good b/c 

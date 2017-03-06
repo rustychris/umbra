@@ -293,11 +293,18 @@ The parent UmbraLayer might need to coordinate the choice of metrics.
    install a callback on the grid which recalculates those quality
    parameters, and explicitly calls modify_cell and modify_edge with
    updated quality numbers.
-   
-   
- - and after some mucking around, trying to add an edge crashed qgis.
 
-   
+ - and after some mucking around, adding an edge crashed qgis once,
+   later on, edges were okay but adding a cell crashed it.
+   might be fixed with new, more diligent handling of fields.
+
+ - edge quality should use a signed distance.
+ - edits have gotten pretty slow.
+ - adding edges appears not to work?
+   log shows that edges are being added..  it's related to the styling - with single style
+   it does show up.
+ - dfm isn't populated depth at nodes or cells.
+
  
 
 

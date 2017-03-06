@@ -81,7 +81,7 @@ class UmbraEditorTool(QgsMapTool):
         self.canvas.setCursor(self.cursor)
 
     def deactivate(self):
-        print "Tool deactivated"
+        self.log.info("Tool deactivated")
 
     def handle_layer_changed(self):
         """ 

@@ -303,15 +303,11 @@ The parent UmbraLayer might need to coordinate the choice of metrics.
  - adding edges appears not to work?
    log shows that edges are being added..  it's related to the styling - with single style
    it does show up.
- - dfm isn't populated depth at nodes or cells.
+ - dfm isn't populating depth at cells.  but maybe it's just not in the nc files?
 
- 
+ - edge quality doesn't get updated when a new cell is created, and is initialized to 
+   a value which suggests the edge is bad.
+ - cell quality isn't initialized properly.
 
-
-
-
-  
-     
-   
  
  

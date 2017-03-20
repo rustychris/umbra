@@ -202,6 +202,17 @@ class UmbraEditorTool(QgsMapTool):
             self.clear_op() # safety first
         else:
             self.log.info("no feature hits")
+
+    def optimize_local(self,event):
+        gl=self.gridlayer()
+        if gl is None:
+            return
+
+        self.log.info("Trying a local optimize")
+        map_xy=self.event_to_map_xy(event)
+
+        n_iters=self.umbra.dockwidget.orthogNIters.value()
+        gl.orthogonalize_local(map_xy,iterations=n_iters)
         
     def toggle_cell(self,event):
         gl=self.gridlayer()
@@ -324,6 +335,8 @@ class UmbraEditorTool(QgsMapTool):
             self.undo()
         elif txt == 'Z':
             self.redo()
+        elif txt=='r':
+            self.optimize_local(event)
         elif txt == 'm':
             self.merge_nodes_of_edge(event)
         elif key == Qt.Key_Delete or key == Qt.Key_Backspace:

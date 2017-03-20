@@ -298,6 +298,10 @@ class Umbra(Boiler):
 
         print "** UNLOAD Umbra"
 
+        # remove any umbra layers - doesn't seem to be working.
+        for gridlayer in self.gridlayers:
+            gridlayer.remove_all_qlayers()
+
         try:
             for action in self.actions:
                 self.iface.removePluginMenu(
@@ -313,9 +317,7 @@ class Umbra(Boiler):
 
         self.dockwidget_hide() # ideally really remove it, but maybe good enough to just hide.
         
-        # remove any umbra layers - doesn't seem to be working.
-        for gridlayer in self.gridlayers:
-            gridlayer.remove_all_qlayers()
+        print "** done with UNLOAD Umbra"
 
     #--------------------------------------------------------------------------
 
@@ -339,7 +341,7 @@ class Umbra(Boiler):
             #    removed on close (see self.onClosePlugin method)
             if self.dockwidget == None:
                 # Create the dockwidget (after translation) and keep reference
-                self.dockwidget = UmbraDockWidget()
+                self.dockwidget = UmbraDockWidget(umbra=self)
 
                 # connect to provide cleanup on closing of dockwidget
                 # self.dockwidget.closingDockWidget.connect(self.on_close_dockwidget)
@@ -436,6 +438,16 @@ class Umbra(Boiler):
         if glayer is not None:
             glayer.add_centers_layer()
 
+    def set_cell_quality_style(self):
+        glayer = self.active_gridlayer()
+        if glayer is not None:
+            glayer.set_cell_quality_style()
+            
+    def set_edge_quality_style(self):
+        glayer = self.active_gridlayer()
+        if glayer is not None:
+            glayer.set_edge_quality_style()
+            
     def enable_tool(self):
         log.info("Enabled umbra mapTool")
         self.iface.mapCanvas().setMapTool(self.editor_tool)

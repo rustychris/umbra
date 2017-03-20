@@ -286,20 +286,27 @@ How to show dynamic edge/cell quality metrics?
 Putting all of the work in the cell layer would be one approach.
 The parent UmbraLayer might need to coordinate the choice of metrics.
 
- - seems like edge_quality is not getting updated.  maybe it should be
-   handled in the CellLayer::on_modify_node?  that's not great...
-   fine for updating the field, but the gui update is tricky...
-   maybe the most appropriate thing would be to have the parent layer
-   install a callback on the grid which recalculates those quality
-   parameters, and explicitly calls modify_cell and modify_edge with
-   updated quality numbers.
-
  - and after some mucking around, adding an edge crashed qgis once,
    later on, edges were okay but adding a cell crashed it.
    might be fixed with new, more diligent handling of fields.
 
- - edge quality should use a signed distance.
+ - edge quality should use a signed distance. i think this might be done now.
  - edits have gotten pretty slow.
+   Q: does triggerRepaint() act synchronously?  Do multiple calls to it slow things down?
+   A: asynchronous - multiple calls don't make any difference - 100 calls still had elapsed time
+      <1ms.
+   Q: Are there API hooks which might freeze the display while things update?
+     SuppressOn / Off
+     beginEditCommand, commitChanges
+     draw()
+     drawingProgress()
+     geometryChanged()
+     repaintRequested()
+     updateField()
+     updateFeature()
+
+    Seems like the display part may not be what is holding back the overall speed.
+    
  - adding edges appears not to work?
    log shows that edges are being added..  it's related to the styling - with single style
    it does show up.
@@ -309,5 +316,13 @@ The parent UmbraLayer might need to coordinate the choice of metrics.
    a value which suggests the edge is bad.
  - cell quality isn't initialized properly.
 
+ - options for the orthogonalize - spinbutton to set how many iterations to run.
+  => orthogNIters spinbox
+   could also pick out selected features, and optimize all of them each iteration, as opposed
+   to whatever is adjacent to the cursor.
+   also key command to save file as is, under last name used.
+   
  
- 
+  The ortho. stuff takes a while - should allow for drawing updates along
+  the way.
+  

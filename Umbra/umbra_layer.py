@@ -1,6 +1,7 @@
 import os
 import sys
 import numpy as np
+import time
 
 try:
     from six import iteritems
@@ -18,15 +19,11 @@ from PyQt4.QtCore import QVariant
 import logging
 log=logging.getLogger('umbra.layer')
 
-if 0: # old installation
-    from   unstructured_grid import mag
-    import unstructured_grid
-    from delft import dfm_grid
-else:
-    from stompy.grid import unstructured_grid 
-    from stompy.utils import mag
-    from stompy.model.delft import dfm_grid
+from stompy.grid import unstructured_grid, orthogonalize
+from stompy.utils import mag
+from stompy.model.delft import dfm_grid
 
+here=os.path.dirname(__file__)
 
 # Used to be a QgsPluginLayer, but no more.
 # now it manages the layers and data specific to a grid
@@ -82,7 +79,8 @@ def update_edge_quality(g,edges=None,with_callback=True):
         edges=slice(None)
     vc=g.cells_center()
     ec=g.edges_center()
-    g.edge_to_cells()
+    # this had been recalculating for all edges
+    g.edge_to_cells(e=edges)
 
     diffs=vc[g.edges['cells'][edges,1]] - vc[g.edges['cells'][edges,0]] 
     if 0: # unsigned distance:
@@ -152,6 +150,10 @@ class UmbraSubLayer(object):
         """
     def selection(self):
         return []
+
+    def predefined_style(self,name):
+        sld_path=os.path.join(here,'styles',name+'.sld')
+        self.qlayer.loadSldStyle(sld_path)
         
 class UmbraNodeLayer(UmbraSubLayer):
     def extend_grid(self):
@@ -737,7 +739,7 @@ class UmbraLayer(object):
             class DumbLog(object):
                 def info(self,*a):
                     s=" ".join(a)
-                    with open(os.path.join(os.path.dirname(__file__),'log'),'a') as fp:
+                    with open(os.path.join(here,'log'),'a') as fp:
                         fp.write(s+"\n")
                         fp.flush()
             dlog=DumbLog()
@@ -924,6 +926,15 @@ class UmbraLayer(object):
                                                   prefix=self.name,
                                                   tag='centers') )
 
+    def set_edge_quality_style(self):
+        sl = self.layer_by_tag('edges')
+        if sl is not None:
+            sl.predefined_style('edge-quality')
+        
+    def set_cell_quality_style(self):
+        sl=self.layer_by_tag('cells')
+        if sl is not None:
+            sl.predefined_style('cell-quality')
         
     def remove_all_qlayers(self):
         layers=[]
@@ -984,6 +995,28 @@ class UmbraLayer(object):
                         lambda: self.grid.modify_node(n,**kw))
         self.undo_stack.push(cmd)
 
+    def orthogonalize_local(self,xy,iterations=1):
+        """
+        If nodes are selected, then adjust the position of those nodes.
+        If no nodes are selected, choose the nearest cell and adjust all
+        of its nodes.
+        """
+        tweaker=orthogonalize.Tweaker(self.grid)
+        
+        nl=self.layer_by_tag('nodes')
+        if nl is not None:
+            nl_sel=nl.selection()
+            if len(nl_sel)>0:
+                for it in range(iterations):
+                    for n in nl_sel:
+                        tweaker.nudge_node_orthogonal(n)
+                return
+        
+        c=self.grid.select_cells_nearest(xy)
+
+        for it in range(iterations):
+            tweaker.nudge_cell_orthogonal(c)
+    
     def toggle_cell_at_point(self,xy):
         def do_toggle():
             self.log.info("umbra_layer: toggle cell at %s"%xy)

@@ -116,6 +116,7 @@ deploy: compile doc transcompile
 	cp -vf $(UI_FILES) $(HOME)/$(QGISDIR)/python/plugins/$(PLUGINNAME)
 	cp -vf $(COMPILED_RESOURCE_FILES) $(HOME)/$(QGISDIR)/python/plugins/$(PLUGINNAME)
 	cp -vrf $(EXTRAS) $(HOME)/$(QGISDIR)/python/plugins/$(PLUGINNAME)
+	cp -vrf styles $(HOME)/$(QGISDIR)/python/plugins/$(PLUGINNAME)
 	[ ! -d i178n ]   || cp  -vfr i18n $(HOME)/$(QGISDIR)/python/plugins/$(PLUGINNAME)
 	[ ! -d $(HELP) ] || cp -vfr $(HELP) $(HOME)/$(QGISDIR)/python/plugins/$(PLUGINNAME)/help
 
@@ -139,6 +140,8 @@ ldeploy: compile doc transcompile
 	[ ! -d i18n ]   || ln -svf i18n $(HOME)/$(QGISDIR)/python/plugins/$(PLUGINNAME)
 	-rm -rf $(HOME)/$(QGISDIR)/python/plugins/$(PLUGINNAME)/help
 	[ ! -d $(HELP) ] || ln -svf $(HELP) $(HOME)/$(QGISDIR)/python/plugins/$(PLUGINNAME)/help
+	ln -svf $(PWD)/styles $(HOME)/$(QGISDIR)/python/plugins/$(PLUGINNAME)/
+
 
 # The dclean target removes compiled python files from plugin directory
 # also deletes any .git entry

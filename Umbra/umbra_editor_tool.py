@@ -1,3 +1,4 @@
+from PyQt4 import QtGui, QtCore
 from PyQt4.QtGui import *
 from PyQt4.QtCore import *
 # from qgis.core import 
@@ -10,7 +11,102 @@ log=logging.getLogger('umbra.editor')
 import umbra_layer 
 
 import numpy as np
+import traceback
 
+class Worker(QObject):
+    '''
+    worker for various long-running grid operations.
+    See https://snorfalorpagus.net/blog/2013/12/07/multithreading-in-qgis-python-plugins/
+    from which this was copied.
+    '''
+    def __init__(self, thunk):
+        QObject.__init__(self)
+        self.thunk = thunk
+        self.killed = False
+    def run(self):
+        ret = None
+        try:
+            self.progress.emit(0.1)
+            self.thunk()
+            self.progress.emit(0.9)
+
+            # if self.killed is False:
+            #     self.progress.emit(100)
+            #     ret = (self.layer, total_area,)
+            ret="some return value"
+        except Exception, e:
+            # forward the exception upstream
+            self.error.emit(e, traceback.format_exc())
+        self.finished.emit(ret)
+    def kill(self):
+        self.killed = True
+    finished = QtCore.pyqtSignal(object)
+    error = QtCore.pyqtSignal(Exception, basestring)
+    progress = QtCore.pyqtSignal(float)
+
+
+class SlowOpDialog(QDialog):
+    def __init__(self,parent=None,iface=None,umbra=None):
+        super(SlowOpDialog,self).__init__(parent)
+        self.umbra=umbra
+        self.iface=iface
+        # log.info("Calling setupUI")
+        # self.setupUi(self)
+        self.iface=iface
+        
+    def startWorker(self, thunk):
+        # create a new worker instance
+        worker = Worker(thunk)
+
+        # configure the QgsMessageBar
+        messageBar = self.iface.messageBar().createMessage('Doing something time consuming...', )
+        progressBar = QtGui.QProgressBar()
+        progressBar.setAlignment(QtCore.Qt.AlignLeft|QtCore.Qt.AlignVCenter)
+        cancelButton = QtGui.QPushButton()
+        cancelButton.setText('Cancel')
+        cancelButton.clicked.connect(worker.kill)
+        messageBar.layout().addWidget(progressBar)
+        messageBar.layout().addWidget(cancelButton)
+        self.iface.messageBar().pushWidget(messageBar, self.iface.messageBar().INFO)
+        self.messageBar = messageBar
+
+        # start the worker in a new thread
+        thread = QThread(self)
+        worker.moveToThread(thread)
+        worker.finished.connect(self.workerFinished)
+        worker.error.connect(self.workerError)
+        worker.progress.connect(progressBar.setValue)
+        thread.started.connect(worker.run)
+        thread.start()
+        self.thread = thread
+        self.worker = worker
+    def workerError(self,*a):
+        log.error("Worker is unhappy")
+        self.workerFinished(ret=None)
+    def workerFinished(self, ret):
+        # clean up the worker and thread
+        log.info("worker finished!")
+        self.worker.deleteLater()
+        self.thread.quit()
+        self.thread.wait()
+        self.thread.deleteLater()
+        # remove widget from message bar
+        self.iface.messageBar().popWidget(self.messageBar)
+        # close the dialog:
+        self.close()
+        
+        if ret is not None:
+            # report the result
+            layer, total_area = ret
+            self.iface.messageBar().pushMessage('The total area of {name} is {area}.'.format(name=layer.name(), area=total_area))
+        else:
+            # notify the user that something went wrong
+            self.iface.messageBar().pushMessage( ('Something went wrong! '
+                                                  'See the message log for more information.' ),
+                                                  level=QgsMessageBar.CRITICAL, duration=3)
+
+            
+    
 class UmbraEditorTool(QgsMapTool):
     node_click_pixels=10
     edge_click_pixels=10
@@ -64,6 +160,8 @@ class UmbraEditorTool(QgsMapTool):
         # track state of ongoing operations
         self.op_action=None
         self.op_node=None
+
+
         
     def handle_tool_select(self):
         assert False
@@ -212,8 +310,27 @@ class UmbraEditorTool(QgsMapTool):
         map_xy=self.event_to_map_xy(event)
 
         n_iters=self.umbra.dockwidget.orthogNIters.value()
-        gl.orthogonalize_local(map_xy,iterations=n_iters)
-        
+
+        if 1:
+            # serial approach
+            gl.orthogonalize_local(map_xy,iterations=n_iters)
+        else:
+            # threaded!?  this crashes
+            thunk=( lambda gl=gl,map_xy=map_xy,n_iters=n_iters:
+                    gl.orthogonalize_local(map_xy,iterations=n_iters) )
+            self.log.info("Creating SlowOpDialog")
+            slow_dlg=SlowOpDialog(parent=self.iface.mainWindow(),
+                                  iface=self.iface,
+                                  umbra=self.umbra)
+            # I don't think we ever actually exec the dialog.  it's
+            # not really needed..
+            # slow_dlg.exec_()
+            self.log.info("exec_ on SlowOpDialog")
+            
+            slow_dlg.startWorker(thunk)
+
+            self.log.info("Called startWorker")
+            
     def toggle_cell(self,event):
         gl=self.gridlayer()
         if gl is None:

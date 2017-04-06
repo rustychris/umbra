@@ -40,7 +40,8 @@ from PyQt4.QtGui import QAction, QIcon
 # Initialize Qt resources from file resources.py
 import resources
 
-from qgis.core import QgsPluginLayerRegistry,QgsMapLayerRegistry
+from qgis.core import (QgsPluginLayerRegistry,QgsMapLayerRegistry,
+                       QgsProject)
 
 # Import the code for the DockWidget
 from umbra_dockwidget import UmbraDockWidget
@@ -55,6 +56,7 @@ from stompy.grid import unstructured_grid
 import umbra_layer
 import umbra_editor_tool
 
+scope="Umbra" # for reading/writing project files
 
 if 0: # not sure if this is messing things up. doesn't seem to matter.
     reload(umbra_openlayer)
@@ -212,6 +214,9 @@ class Umbra(Boiler):
         self.canvas=self.iface.mapCanvas()
         self.gridlayers=[]
 
+        QgsProject.instance().writeProject.connect(self.on_writeProject)
+        iface.projectRead.connect(self.on_readProject)
+
     def initGui(self):
         """Create the menu entries and toolbar icons inside the QGIS GUI."""
 
@@ -296,11 +301,19 @@ class Umbra(Boiler):
     def unload(self):
         """Removes the plugin menu item and icon from QGIS GUI."""
 
-        print "** UNLOAD Umbra"
+        self.log.info("** UNLOAD Umbra")
 
+        # Try to disconnect ...
+        QgsProject.instance().writeProject.disconnect(self.on_writeProject)
+        self.iface.projectRead.disconnect(self.on_readProject)
+
+        self.log.info("** disconnected project signals")
+        
         # remove any umbra layers - doesn't seem to be working.
         for gridlayer in self.gridlayers:
             gridlayer.remove_all_qlayers()
+
+        self.log.info("** attempted to remove qlayers")
 
         try:
             for action in self.actions:
@@ -309,15 +322,15 @@ class Umbra(Boiler):
                     action)
                 self.iface.removeToolBarIcon(action)
         except Exception as exc:
-            print "While removing toolbaricon"
-            print exc
+            self.log.error("While removing toolbaricon")
+            self.log.error(str(exc))
         
         # remove the toolbar(?)
         self.toolbar=None
 
         self.dockwidget_hide() # ideally really remove it, but maybe good enough to just hide.
         
-        print "** done with UNLOAD Umbra"
+        self.log.info("** done with UNLOAD Umbra")
 
     #--------------------------------------------------------------------------
 
@@ -485,4 +498,30 @@ class Umbra(Boiler):
                 self.log.info("Done with setting map tool to ours")
 
 
+    def on_writeProject(self,doc):
+        self.log.info("Got a writeProject(%s)"%(str(doc)))
+        
+        prj=QgsProject.instance()
 
+        prj.writeEntry(scope,"GridCount",len(self.gridlayers))
+        for i,gl in enumerate(self.gridlayers): 
+            gl.write_to_project(prj,scope,doc,"Grid%04d/"%i)
+
+    def on_readProject(self):
+        self.log.info("Got a readProject signal")
+
+        prj=QgsProject.instance()
+
+        grid_count,_ = prj.readNumEntry(scope,"GridCount",0)
+        self.log.info("on_readProject: grid_count=%d"%grid_count)
+
+        for i in range(grid_count):
+            tag="Grid%04d/"%i
+            self.log.info("on_readProject: reading from tag %s"%tag)
+
+            # gl.write_to_project(prj,scope,doc,"grid%04d/"%i)
+            gl=umbra_layer.UmbraLayer.load_from_project(self,prj,scope,tag)
+
+            self.log.info("on_readProject: done with tag %s"%tag)
+
+            

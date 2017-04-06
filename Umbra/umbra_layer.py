@@ -690,25 +690,6 @@ class UmbraCellCenterLayer(UmbraCellLayer):
 
     # extend, unextend, on_delete_cell: use inherited method of UmbraCellLayer
        
-    
-    # def on_modify_node(self,g,func_name,n,**k):
-    #     if 'x' not in k:
-    #         return
-    #     
-    #     cell_changes={}
-    #     cells=self.grid.node_to_cells(n)
-    #     self.grid.cells_center(refresh=cells) # potentially redundant 
-    # 
-    #     # dropped an odd reference to the edges - see CellLayer.  
-    #     for i in cells:
-    #         fid=self.grid.cells[i]['feat_id']
-    #         geom=self.cell_geometry(i)
-    #         cell_changes[fid]=geom
-    #     self.qlayer.dataProvider().changeGeometryValues(cell_changes)
-    #     self.qlayer.triggerRepaint()
-
-    # def on_add_cell(self,g,func_name,return_value,**k): # Same as CellLayer
-         
     def cell_geometry(self,i):
         pnts=[QgsPoint(self.grid.nodes['x'][n,0],
                        self.grid.nodes['x'][n,1])
@@ -727,7 +708,7 @@ class UmbraLayer(object):
     layer_count=0
     crs="?crs=epsg:26910" # was 4326
     
-    def __init__(self,umbra,grid,name=None):
+    def __init__(self,umbra,grid,name=None,path=None,grid_format=None):
         """
         Does not add the layers to the GUI - call register_layers
         for that.
@@ -750,6 +731,9 @@ class UmbraLayer(object):
 
         self.frozen=False
         self.umbra=umbra
+        # for writing metadata to project files to reload the layer
+        self.grid_format=grid_format
+        self.path=path
 
         self.grid=grid
 
@@ -768,6 +752,27 @@ class UmbraLayer(object):
         
         self.undo_stack=QUndoStack()
 
+    def write_to_project(self,prj,scope,doc,tag):
+        if not scope.endswith('/'):
+            scope=scope+'/'
+
+        prj.writeEntry(scope,tag+'name',self.name)
+        prj.writeEntry(scope,tag+'grid_format',str(self.grid_format))
+        prj.writeEntry(scope,tag+'path',str(self.path))
+
+    @classmethod
+    def load_from_project(klass,umbra,prj,scope,tag):
+        name,_=prj.readEntry(scope,tag+'name','')
+        grid_format,_=prj.readEntry(scope,tag+'grid_format',"")
+        path,_=prj.readEntry(scope,tag+'path',"")
+
+        if '' in [name,grid_format,path]:
+            self.log.error("Project file missing requisite data to load an umbra layer")
+            return
+
+        return klass.open_layer(umbra=umbra,grid_format=grid_format,path=path,name=name)
+
+        
     def connect_grid(self):
         """
         Install callbacks on the grid to update cell and edge quality fields.
@@ -836,9 +841,9 @@ class UmbraLayer(object):
         return "grid%4d"%UmbraLayer.count
         
     @classmethod
-    def open_layer(klass,umbra,grid_format,path):
+    def open_layer(klass,umbra,grid_format,path,name=None):
         g=klass.load_grid(path=path,grid_format=grid_format)
-        return klass(umbra=umbra,grid=g)
+        return klass(umbra=umbra,grid=g,path=path,grid_format=grid_format,name=name)
 
     @classmethod
     def load_grid(klass,grid_format=None,path=None):

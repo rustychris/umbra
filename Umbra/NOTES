@@ -326,3 +326,73 @@ The parent UmbraLayer might need to coordinate the choice of metrics.
   The ortho. stuff takes a while - should allow for drawing updates along
   the way.
   
+
+--
+
+Got an AssertionError at delete_cell - this was on toggle cell in a quad 
+which had just been cleared of two tris, while trying to delete cell.
+So toggle cell picked up an old cell, it seems.
+
+Possible that the index was stale? apparently - renumbering let if proceed...
+
+Reproduced a second time - clearing the tris by deleting the edge between them.
+
+And maybe it's time to allow for saving some of the info into a qgis project?
+ - QgsProject.instance().writeEntry(pluginName,setting,value)
+ - QgsProject.instance().read{Entry,NumEntry,DoubleEntry,BoolEntry,ListEntry}(pluginName,setting)
+
+ - there are signals on a project - writeMapLayer, writeProject, probably those are the 
+   places to handle some special sauce.
+
+
+   writeProject does get emitted on saving a project.
+   as is, it writes the status of the layer tree out, things like 
+      <layer-tree-layer expanded="1" checked="Qt::Unchecked" id="grid2_nodes20170321104720554" name="grid2-nodes">
+        <customproperties/>
+      </layer-tree-layer>
+   later on some coordinate transforms:
+      <layer_coordinate_transform destAuthId="EPSG:26910" srcAuthId="EPSG:26910" srcDatumTransform="-1" destDatumTransform="-1" layerid="grid2_nodes20170321104720554"/>
+   Ordering of the layers...
+   Legend information on the layers
+   And the good stuff - 
+  <projectlayers>
+    <maplayer simplifyAlgorithm="0" minimumScale="0" maximumScale="1e+08" simplifyDrawingHints="1" readOnly="0" minLabelScale="0" maxLabelScale="1e+08" simplifyDrawingTol="1" geometry="Polygon" simplifyMaxScale="1" type="vector" hasScaleBasedVisibilityFlag="0" simplifyLocal="1" scaleBasedLabelVisibilityFlag="0">
+      <extent>
+        <xmin>490243</xmin>
+        <ymin>4137175.77396776247769594</ymin>
+        <xmax>609718.45893199532292783</xmax>
+        <ymax>4232151</ymax>
+      </extent>
+      <id>grid2_cells20170321104713208</id>
+      <datasource>memory?geometry=Polygon&amp;crs=EPSG:26910&amp;field=cell_id:(0,0)&amp;field=mark:(0,0)&amp;field=cell_quality:(0,0)</datasource>
+      <keywordList>
+        <value></value>
+      </keywordList>
+      <layername>grid2-cells</layername>
+
+style info...
+
+But as it is, on loading the project, the layers are created but of course Umbra has no 
+knowledge of them.
+http://spatialgalaxy.net/2015/03/13/faking-a-data-provider-with-python/
+
+Somewhat relevant, but not really much useful beyond what I have now.
+They follow the more standard editingStarted, Stopped, commited... geometryChanged
+sort of signals.
+
+Maybe the way to go is for the memory layers to show up just like they do now, but then
+the plugin can save its own state, which would be the settings in the dialogs, and the
+data necessary to load all of the current grids.  It just needs enough information to
+load a grid, associate the existing memory layers, and populate them.
+
+
+There is also the option of setting custom properties on the layers - 
+layer.setCustomProperty("mytext","hello world") # write
+txt=layer.customProperty("mytext","default value") # read
+
+
+Progress - but some issues with reading and writing.
+ 1. As is, it writes GridCount into a separate block of xml than it writes
+    the layers, and it seems that qgis only keeps the last block.
+ 2. Manually, I collapsed the two Umbra blocks, and it found the grid, but
+    did not populate the layers.

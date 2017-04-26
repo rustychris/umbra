@@ -391,8 +391,12 @@ layer.setCustomProperty("mytext","hello world") # write
 txt=layer.customProperty("mytext","default value") # read
 
 
-Progress - but some issues with reading and writing.
- 1. As is, it writes GridCount into a separate block of xml than it writes
-    the layers, and it seems that qgis only keeps the last block.
- 2. Manually, I collapsed the two Umbra blocks, and it found the grid, but
-    did not populate the layers.
+Progress - but some issues with reading and writing.  Fixed the problem with 
+separate blocks...
+
+ 1. Will it find the layer now? Yes, but the register_layers() method doesn't pick up
+    on the existing layers.
+  
+  
+
+

@@ -103,7 +103,13 @@ def update_edge_quality(g,edges=None,with_callback=True):
         g.edges['edge_quality'][edges]=c2c
 
 class UmbraSubLayer(object):
-    def __init__(self,log,grid,crs,prefix,tag=None):
+    def __init__(self,log,grid,crs,prefix,tag=None,qlayer=None):
+        """
+        qlayer: not robust. for the case where a layer
+        already exists, and we just populate it.  But maybe too fragile to assume
+        that the existing layer is defined in the same way as a new layer
+        would be?
+        """
         self.log=log
         self.grid=grid
         self.tag=tag
@@ -111,7 +117,16 @@ class UmbraSubLayer(object):
         self.crs=crs
         self.prefix=prefix
         self.frozen=False
-        self.qlayer=self.create_qlayer()
+
+        if qlayer is not None:
+            self.log.info("Clearing old fields from layer")
+            pr = qlayer.dataProvider()
+            attr_idxs = pr.attributeIndexes() #  list of ints
+            pr.deleteAttributes(attr_idxs)
+            qlayer.updateFields() # tell the vector layer to fetch changes from the provider
+            
+        self.qlayer=self.create_qlayer(existing=qlayer)
+
         self.populate_qlayer()
 
     # This is a somewhat extreme version --
@@ -125,7 +140,7 @@ class UmbraSubLayer(object):
         # Makes use of the fact that populate_qlayer() drops all existing features
         self.populate_qlayer()
         
-    def create_qlayer(self):
+    def create_qlayer(self,existing=None):
         return None
         
     def extend_grid(self):
@@ -176,8 +191,13 @@ class UmbraNodeLayer(UmbraSubLayer):
         self.grid.unsubscribe_after('add_node',self.on_add_node)
         self.grid.unsubscribe_before('delete_node',self.on_delete_node)
         
-    def create_qlayer(self):
-        qlayer= QgsVectorLayer("Point"+self.crs, self.prefix+"-nodes", "memory")
+    def create_qlayer(self,existing=None):
+        if existing:
+            # assumes that caller has cleared out the data table
+            # and we can start from a clean slate.
+            qlayer=existing
+        else:
+            qlayer= QgsVectorLayer("Point"+self.crs, self.prefix+"-nodes", "memory")
 
         attrs=[QgsField("node_id",QVariant.Int)]
         casters=[int]
@@ -208,14 +228,15 @@ class UmbraNodeLayer(UmbraSubLayer):
         pr = qlayer.dataProvider()
         pr.addAttributes(attrs)
         qlayer.updateFields() # tell the vector layer to fetch changes from the provider
-        
-        # nice clean black dot
-        symbol = QgsMarkerSymbolV2.createSimple({'outline_style':'no',
-                                                 'name': 'circle', 
-                                                 'size_unit':'MM',
-                                                 'size':'1',
-                                                 'color': 'black'})
-        qlayer.rendererV2().setSymbol(symbol)
+
+        if not existing:
+            # nice clean black dot
+            symbol = QgsMarkerSymbolV2.createSimple({'outline_style':'no',
+                                                     'name': 'circle', 
+                                                     'size_unit':'MM',
+                                                     'size':'1',
+                                                     'color': 'black'})
+            qlayer.rendererV2().setSymbol(symbol)
         return qlayer
 
     def populate_qlayer(self,clear=True):
@@ -315,10 +336,12 @@ class UmbraNodeLayer(UmbraSubLayer):
         self.grid.merge_nodes(nodes[0],nodes[1])
         
 
-
 class UmbraEdgeLayer(UmbraSubLayer):
-    def create_qlayer(self):
-        qlayer=QgsVectorLayer("LineString"+self.crs,self.prefix+"-edges","memory")
+    def create_qlayer(self,existing=None):
+        if existing:
+            qlayer=existing
+        else:
+            qlayer=QgsVectorLayer("LineString"+self.crs,self.prefix+"-edges","memory")
         
         pr = qlayer.dataProvider()
 
@@ -356,12 +379,13 @@ class UmbraEdgeLayer(UmbraSubLayer):
         pr.addAttributes(e_attrs)
         qlayer.updateFields() # tell the vector layer to fetch changes from the provider
         
-        # clean, thin black style
-        symbol = QgsLineSymbolV2.createSimple({'line_style':'solid',
-                                               'line_width':'0.2',
-                                               'line_width_unit':'MM',
-                                               'line_color': 'black'})
-        qlayer.rendererV2().setSymbol(symbol)
+        if not existing:
+            # clean, thin black style
+            symbol = QgsLineSymbolV2.createSimple({'line_style':'solid',
+                                                   'line_width':'0.2',
+                                                   'line_width_unit':'MM',
+                                                   'line_color': 'black'})
+            qlayer.rendererV2().setSymbol(symbol)
         return qlayer
 
     def populate_qlayer(self):
@@ -486,8 +510,11 @@ class UmbraCellLayer(UmbraSubLayer):
     # the name of the field added to the grid to track the features here
     feat_id_name='feat_id'
     
-    def create_qlayer(self):
-        qlayer=QgsVectorLayer("Polygon"+self.crs,self.prefix+"-cells","memory")
+    def create_qlayer(self,existing=None):
+        if existing:
+            qlayer=existing
+        else:
+            qlayer=QgsVectorLayer("Polygon"+self.crs,self.prefix+"-cells","memory")
 
         c_attrs=[QgsField("cell_id",QVariant.Int)]
         casters=[int]
@@ -521,12 +548,13 @@ class UmbraCellLayer(UmbraSubLayer):
         pr.addAttributes(c_attrs)
         qlayer.updateFields() # tell the vector layer to fetch changes from the provider
         
-        # transparent red, no border
-        # but this is the wrong class...
-        symbol = QgsFillSymbolV2.createSimple({'outline_style':'no',
-                                               'style':'solid',
-                                               'color': '249,0,0,78'})
-        qlayer.rendererV2().setSymbol(symbol)
+        if not existing:
+            # transparent red, no border
+            # but this is the wrong class...
+            symbol = QgsFillSymbolV2.createSimple({'outline_style':'no',
+                                                   'style':'solid',
+                                                   'color': '249,0,0,78'})
+            qlayer.rendererV2().setSymbol(symbol)
         return qlayer
         
     def extend_grid(self):
@@ -673,22 +701,27 @@ class UmbraCellCenterLayer(UmbraCellLayer):
     First try at additional derived layers
     """
     feat_id_name='center_feat_id'
-    def create_qlayer(self):
-        layer=QgsVectorLayer("Point"+self.crs,self.prefix+"-centers","memory")
+    def create_qlayer(self,existing=None):
+        if existing:
+            qlayer=existing
+        else:
+            qlayer=QgsVectorLayer("Point"+self.crs,self.prefix+"-centers","memory")
 
         # for now, cell centers don't carry all of the fields like cell polygons do.
         self.c_attrs=[]
         self.casters=[]
-        
-        symbol = QgsMarkerSymbolV2.createSimple({'outline_style':'no',
-                                                 'name': 'circle', 
-                                                 'size_unit':'MM',
-                                                 'size':'1',
-                                                 'color': 'green'})
-        layer.rendererV2().setSymbol(symbol)
-        return layer
+
+        if not existing:
+            symbol = QgsMarkerSymbolV2.createSimple({'outline_style':'no',
+                                                     'name': 'circle', 
+                                                     'size_unit':'MM',
+                                                     'size':'1',
+                                                     'color': 'green'})
+            qlayer.rendererV2().setSymbol(symbol)
+        return qlayer
 
     # extend, unextend, on_delete_cell: use inherited method of UmbraCellLayer
+    # populate_qlayer(self), selection() also same as cell Layer
        
     def cell_geometry(self,i):
         pnts=[QgsPoint(self.grid.nodes['x'][n,0],
@@ -696,10 +729,6 @@ class UmbraCellCenterLayer(UmbraCellLayer):
               for n in self.grid.cell_to_nodes(i)]
         cc=self.grid.cells_center()
         return QgsGeometry.fromPoint( QgsPoint(cc[i,0],cc[i,1]) )
-
-    # def populate_qlayer(self): # same as cell Layer
-
-    # def selection(self): # same as Cell Layer
 
     
 class UmbraLayer(object):
@@ -753,15 +782,16 @@ class UmbraLayer(object):
         self.undo_stack=QUndoStack()
 
     def write_to_project(self,prj,scope,doc,tag):
-        if not scope.endswith('/'):
-            scope=scope+'/'
+        # had been scope here, but pretty sure it should be tag.
+        if not tag.endswith('/'):
+            tag=tag+'/'
 
         prj.writeEntry(scope,tag+'name',self.name)
         prj.writeEntry(scope,tag+'grid_format',str(self.grid_format))
         prj.writeEntry(scope,tag+'path',str(self.path))
 
     @classmethod
-    def load_from_project(klass,umbra,prj,scope,tag):
+    def load_from_project(cls,umbra,prj,scope,tag):
         name,_=prj.readEntry(scope,tag+'name','')
         grid_format,_=prj.readEntry(scope,tag+'grid_format',"")
         path,_=prj.readEntry(scope,tag+'path',"")
@@ -770,8 +800,11 @@ class UmbraLayer(object):
             self.log.error("Project file missing requisite data to load an umbra layer")
             return
 
-        return klass.open_layer(umbra=umbra,grid_format=grid_format,path=path,name=name)
+        log.info('load_from_project: name=%s  grid_format=%s  path=%s'%(name,grid_format,path))
 
+        new_layer=cls.open_layer(umbra=umbra,grid_format=grid_format,path=path,name=name)
+        new_layer.register_layers(use_existing=True)
+        return new_layer
         
     def connect_grid(self):
         """
@@ -841,12 +874,12 @@ class UmbraLayer(object):
         return "grid%4d"%UmbraLayer.count
         
     @classmethod
-    def open_layer(klass,umbra,grid_format,path,name=None):
-        g=klass.load_grid(path=path,grid_format=grid_format)
-        return klass(umbra=umbra,grid=g,path=path,grid_format=grid_format,name=name)
+    def open_layer(cls,umbra,grid_format,path,name=None):
+        g=cls.load_grid(path=path,grid_format=grid_format)
+        return cls(umbra=umbra,grid=g,path=path,grid_format=grid_format,name=name)
 
     @classmethod
-    def load_grid(klass,grid_format=None,path=None):
+    def load_grid(cls,grid_format=None,path=None):
         if path is None:
             # for development, load sample data:
             suntans_path=os.path.join( os.path.dirname(__file__),
@@ -876,15 +909,22 @@ class UmbraLayer(object):
         # reg.removeMapLayers([sublayer.qlayer])
         
     # create the memory layers and populate accordingly
-    def register_layer(self,sublayer):
+    def register_layer(self,sublayer,preexisting=False):
+        """
+        Given a sublayer object, hook up some callbacks so this parent
+        UmbraLayer can keep track, and add it to the group.
+        preexisting: if true, assume the qlayer has already been added to
+        the layer registry group.
+        """
         self.layers.append( sublayer )
         def callback(sublayer=sublayer):
             self.on_layer_deleted(sublayer)
         sublayer.qlayer.layerDeleted.connect(callback)
-        
-        QgsMapLayerRegistry.instance().addMapLayer(sublayer.qlayer)
-        li=self.iface.legendInterface()
-        li.moveLayer(sublayer.qlayer,self.group_index)
+
+        if not preexisting:
+            QgsMapLayerRegistry.instance().addMapLayer(sublayer.qlayer)
+            li=self.iface.legendInterface()
+            li.moveLayer(sublayer.qlayer,self.group_index)
 
     def layer_by_tag(self,tag):
         for layer in self.layers:
@@ -892,38 +932,66 @@ class UmbraLayer(object):
                 return layer
         return None
 
-    def create_group(self):
-        # Create a group for the layers -
-        li=self.iface.legendInterface()
+    def create_group(self,use_existing=False):
         grp_name=self.grid_name()
-        self.group_index=li.addGroup(grp_name)
+        li=self.iface.legendInterface()
+
+        if use_existing:
+            # need to find the index of the group named grp_name
+            try:
+                self.group_index=li.groups().index(grp_name)
+            except ValueError:
+                self.log.warning("Failed to find group '%s', will create it"%grp_name)
+                use_existing=False
+
+        if not use_existing:
+            # Create a group for the layers -
+            self.group_index=li.addGroup(grp_name)
         
-    def register_layers(self):
+    def register_layers(self,use_existing=False):
+        """ 
+        Add individual feature layers for this grid.
+        use_existing: defaults to creating new layers.  If true,
+         look for existing layers by name, and replace the data 
+         in those layers rather than creating new layers. 
+        """
         self.iface=self.umbra.iface
-        self.create_group()
+        self.create_group(use_existing=use_existing)
 
-        self.register_layer( UmbraCellLayer(self.log,
-                                            self.grid,
-                                            crs=self.crs,
-                                            prefix=self.name,
-                                            tag='cells') )
+        # tags are used to map between names and the sublayer 
+        # class implementation:
+        tag_map=dict(cells=UmbraCellLayer,
+                     edges=UmbraEdgeLayer,
+                     nodes=UmbraNodeLayer,
+                     centers=UmbraCellCenterLayer)
 
-        self.register_layer( UmbraEdgeLayer(self.log,
-                                            self.grid,
-                                            crs=self.crs,
-                                            prefix=self.name,
-                                            tag='edges' ) )
+        if not use_existing:
+            for tag in ['cells','edges','nodes']:
+                cls=tag_map[tag]
+                self.register_layer( cls(self.log,
+                                         self.grid,
+                                         crs=self.crs,
+                                         prefix=self.name,
+                                         tag=tag) )
+        else:
+            # scan the group to find which layers to instantiate
+            li=self.iface.legendInterface()
+            mlr=QgsMapLayerRegistry.instance()
 
-        self.register_layer( UmbraNodeLayer(self.log,
-                                            self.grid,
-                                            crs=self.crs,
-                                            prefix=self.name,
-                                            tag='nodes') )
-        
-        # set extent to the extent of our layer
-        # skip while developing
-        # canvas.setExtent(layer.extent())
-        
+            # return of groupLayerRelationship is
+            # [ ['groupname',['layer_uuid','layer_uuid',..]],...]
+            for layer_uuid in li.groupLayerRelationship()[self.group_index][1]:
+                # these are unicode uniquified layer names.
+                qlayer=mlr.mapLayers()[layer_uuid]
+                # should be <umbra_layer.name>-<tag>
+                grid_name,tag = qlayer.name().split('-') 
+                # assert self.name==grid_name
+                cls=tag_map[tag]
+
+                sublayer=cls(self.log,self.grid,crs=self.crs,
+                             prefix=self.name,tag=tag,qlayer=qlayer)
+                self.register_layer(sublayer,preexisting=True)
+            
     def add_centers_layer(self):
         self.register_layer( UmbraCellCenterLayer(self.log,
                                                   self.grid,

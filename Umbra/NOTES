@@ -397,6 +397,30 @@ separate blocks...
  1. Will it find the layer now? Yes, but the register_layers() method doesn't pick up
     on the existing layers.
   
-  
+## 
 
+Loaded two layers into a project, then removed them, saved the qgs, and the plugin
+is trying to load the umbra layers, even though they should have been removed.  
+
+
+Whatever callback prints "Checking for layers in <.....>" is not being cancelled
+when reloading Umbra.
+
+That's in umbra::current_layer_is_umbra, which is called from umbra::on_layer_changed.
+
+activate() used to have code to connect iface.legendInterface().currentLayerChanged
+to umbra's on_layer_changed signal.
+This signal is still being connected, but I think by iface poking around.
+
+Oops - current_layer_is_umbra is not called from on_layer_changed.  No magic there.
+
+Maybe it's actually editor_tool: handle_layer_changed.
+
+Yeap.
+
+So either deactivate() should shutdown that listener, or removing the plugin
+should have a way to call into the editor and uninstall things.
+ - activate is what gets called when somebody clicks the tool
+ - handle_layer_changed is installed in the tool constructor.
+ - who installs the tool? umbra does, in initGui.
 

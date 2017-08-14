@@ -154,25 +154,23 @@ class UmbraEditorTool(QgsMapTool):
                                               self.iface.mainWindow())
         self.action_coverage_editor.setCheckable(True) 
         self.action_coverage_editor.setEnabled(True)
-        QObject.connect(self.action_coverage_editor, SIGNAL("triggered()"), self.handle_tool_select)
-        QObject.connect(self.iface, SIGNAL("currentLayerChanged(QgsMapLayer*)"), self.handle_layer_changed)
+        # handle_tool_select has been dummied for a while.  probably this is ready
+        # to be removed, too.
+        # QObject.connect(self.action_coverage_editor, SIGNAL("triggered()"), self.handle_tool_select)
+
+        #QObject.connect(self.iface, SIGNAL("currentLayerChanged(QgsMapLayer*)"), self.handle_layer_changed)
+        # can we use the newer syntax?
+        self.iface.currentLayerChanged.connect(self.handle_layer_changed)
         
         # track state of ongoing operations
         self.op_action=None
         self.op_node=None
 
-
-        
-    def handle_tool_select(self):
-        assert False
-        print "handle_tool_select - probably shouldn't be calling this now"
-        if self.action_coverage_editor.isChecked():
-            self.canvas.setMapTool(self)
-            # And popup the dock?
-            self.umbra.dockwidget_show()
-        else:
-            self.canvas.unsetMapTool(self)
-            # self.umbra.dockwidget_hide() # untested
+    def unload(self):
+        """
+        Reverse the actions of __init__
+        """
+        self.iface.currentLayerChanged.disconnect(self.handle_layer_changed)
 
     def activate(self):
         print "Call to activate for the editor tool"

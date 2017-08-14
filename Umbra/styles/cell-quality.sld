@@ -6,9 +6,9 @@
       <se:Name>gridN-cells</se:Name>
       <se:FeatureTypeStyle>
         <se:Rule>
-          <se:Name> 0.0000 - 0.0324 </se:Name>
+          <se:Name> 0.00 - 0.01 </se:Name>
           <se:Description>
-            <se:Title> 0.0000 - 0.0324 </se:Title>
+            <se:Title> 0.00 - 0.01 </se:Title>
           </se:Description>
           <ogc:Filter xmlns:ogc="http://www.opengis.net/ogc">
             <ogc:And>
@@ -29,9 +29,9 @@
           </se:PolygonSymbolizer>
         </se:Rule>
         <se:Rule>
-          <se:Name> 0.0324 - 0.0647 </se:Name>
+          <se:Name> 0.01 - 0.02 </se:Name>
           <se:Description>
-            <se:Title> 0.0324 - 0.0647 </se:Title>
+            <se:Title> 0.01 - 0.02 </se:Title>
           </se:Description>
           <ogc:Filter xmlns:ogc="http://www.opengis.net/ogc">
             <ogc:And>
@@ -52,9 +52,9 @@
           </se:PolygonSymbolizer>
         </se:Rule>
         <se:Rule>
-          <se:Name> 0.0647 - 0.0971 </se:Name>
+          <se:Name> 0.02 - 0.04 </se:Name>
           <se:Description>
-            <se:Title> 0.0647 - 0.0971 </se:Title>
+            <se:Title> 0.02 - 0.04 </se:Title>
           </se:Description>
           <ogc:Filter xmlns:ogc="http://www.opengis.net/ogc">
             <ogc:And>
@@ -75,9 +75,9 @@
           </se:PolygonSymbolizer>
         </se:Rule>
         <se:Rule>
-          <se:Name> 0.0971 - 0.1294 </se:Name>
+          <se:Name> &gt; 0.04 </se:Name>
           <se:Description>
-            <se:Title> 0.0971 - 0.1294 </se:Title>
+            <se:Title> &gt; 0.04 </se:Title>
           </se:Description>
           <ogc:Filter xmlns:ogc="http://www.opengis.net/ogc">
             <ogc:And>

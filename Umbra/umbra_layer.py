@@ -742,21 +742,7 @@ class UmbraLayer(object):
         Does not add the layers to the GUI - call register_layers
         for that.
         """
-        # having some trouble getting reliable output from the log...
-        if 1:
-            self.log=log
-        else:
-            class DumbLog(object):
-                def info(self,*a):
-                    s=" ".join(a)
-                    with open(os.path.join(here,'log'),'a') as fp:
-                        fp.write(s+"\n")
-                        fp.flush()
-            dlog=DumbLog()
-            dlog.debug=dlog.info
-            dlog.warning=dlog.info
-            dlog.error=dlog.info
-            self.log=dlog
+        self.log=log
 
         self.frozen=False
         self.umbra=umbra
@@ -867,12 +853,16 @@ class UmbraLayer(object):
             if layer.qlayer.name() == ql.name():
                 return True
         return False
+
+    _grid_name=None
     def grid_name(self):
         """ used to label the group
         """
-        UmbraLayer.count+=1
-        return "grid%4d"%UmbraLayer.count
-        
+        if self._grid_name is None:
+            UmbraLayer.count+=1
+            self._grid_name="grid%4d"%UmbraLayer.count
+        return self._grid_name
+
     @classmethod
     def open_layer(cls,umbra,grid_format,path,name=None):
         g=cls.load_grid(path=path,grid_format=grid_format)
@@ -896,17 +886,36 @@ class UmbraLayer(object):
                 raise Exception("Need to add other grid types, like %s!"%grid_format)
         return grid
 
-
     def on_layer_deleted(self,sublayer):
         self.layers.remove(sublayer)
-        self.log.info("signal received: node layer deleted")
+        self.log.info("signal received: layer deleted")
+        self.log.info("that leaves %d more sublayers for this grid"%len(self.layers))
         sublayer.unextend_grid()
+
+        # not sure what the proper behavior should be when all of our layers 
+        # have been removed.  The layer groups are unfortunately not very
+        # robust, so it's a bit difficult to let the layer group play a proxy
+        # role for the umbra layer.  Probably at the point that all the sublayers 
+        # are removed, we should remove the umbra layer entirely.
+        if len(self.layers)==0:
+            self.unload_layer()
 
         # these are the steps which lead to this callback.  don't do them
         # again.
         
         # reg=QgsMapLayerRegistry.instance()
         # reg.removeMapLayers([sublayer.qlayer])
+
+    def unload_layer(self):
+        """ Remove this layer.  Should only be called once the qgis layers
+        have already been removed, and with current implementation, will be
+        called automatically when that happens.
+        """
+        # remove the group
+        self.log.info("All layers gone - will remove group '%s'"%self.grid_name())
+        # then drop this umbra_layer entirely
+        self.remove_group()
+        self.umbra.unregister_grid(self)    
         
     # create the memory layers and populate accordingly
     def register_layer(self,sublayer,preexisting=False):
@@ -947,7 +956,18 @@ class UmbraLayer(object):
         if not use_existing:
             # Create a group for the layers -
             self.group_index=li.addGroup(grp_name)
+
+    def remove_group(self):
+        grp_name=self.grid_name()
+        li=self.iface.legendInterface()
         
+        for idx,group_name in enumerate(li.groups()):
+            if group_name==grp_name:
+                li.removeGroup(idx)
+                break
+        else:
+            self.log.warning("Group '%s' not found to remove"%grp_name)
+
     def register_layers(self,use_existing=False):
         """ 
         Add individual feature layers for this grid.
@@ -984,7 +1004,9 @@ class UmbraLayer(object):
                 # these are unicode uniquified layer names.
                 qlayer=mlr.mapLayers()[layer_uuid]
                 # should be <umbra_layer.name>-<tag>
+                self.log.warning("Qlayer name causing problems: %s"%qlayer.name())
                 grid_name,tag = qlayer.name().split('-') 
+                    
                 # assert self.name==grid_name
                 cls=tag_map[tag]
 
@@ -1010,6 +1032,11 @@ class UmbraLayer(object):
             sl.predefined_style('cell-quality')
         
     def remove_all_qlayers(self):
+        """
+        Removes the QGIS layers for this Umbra layer.
+        Currently, removing the last QGIS layer triggers
+        removal/unregistering of the whole umbra layer.
+        """
         layers=[]
         for sublayer in self.layers:
             layers.append( sublayer.qlayer.name() )
@@ -1017,7 +1044,7 @@ class UmbraLayer(object):
         self.log.info("Found %d layers to remove"%len(layers))
         
         reg.removeMapLayers(layers)
-        
+
     def distance_to_node(self,pnt,i):
         """ compute distance from the given point to the given node, returned in
         physical distance units [meters]"""

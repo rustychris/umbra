@@ -6,9 +6,9 @@
       <se:Name>grid2-edges</se:Name>
       <se:FeatureTypeStyle>
         <se:Rule>
-          <se:Name> -0.2076 - 0.3752 </se:Name>
+          <se:Name> &lt; 0.0 </se:Name>
           <se:Description>
-            <se:Title> -0.2076 - 0.3752 </se:Title>
+            <se:Title>  &lt; 0.0 </se:Title>
           </se:Description>
           <ogc:Filter xmlns:ogc="http://www.opengis.net/ogc">
             <ogc:And>
@@ -32,9 +32,9 @@
           </se:LineSymbolizer>
         </se:Rule>
         <se:Rule>
-          <se:Name> 0.3752 - 0.9581 </se:Name>
+          <se:Name> 0.0 - 0.1 </se:Name>
           <se:Description>
-            <se:Title> 0.3752 - 0.9581 </se:Title>
+            <se:Title> 0.0 - 0.1 </se:Title>
           </se:Description>
           <ogc:Filter xmlns:ogc="http://www.opengis.net/ogc">
             <ogc:And>
@@ -58,9 +58,9 @@
           </se:LineSymbolizer>
         </se:Rule>
         <se:Rule>
-          <se:Name> 0.9581 - 1.5409 </se:Name>
+          <se:Name> 0.1 - 0.2 </se:Name>
           <se:Description>
-            <se:Title> 0.9581 - 1.5409 </se:Title>
+            <se:Title> 0.1 - 0.2 </se:Title>
           </se:Description>
           <ogc:Filter xmlns:ogc="http://www.opengis.net/ogc">
             <ogc:And>
@@ -84,9 +84,9 @@
           </se:LineSymbolizer>
         </se:Rule>
         <se:Rule>
-          <se:Name> 1.5409 - 2.1238 </se:Name>
+          <se:Name> &gt; 0.2 </se:Name>
           <se:Description>
-            <se:Title> 1.5409 - 2.1238 </se:Title>
+            <se:Title> &gt; 0.2 </se:Title>
           </se:Description>
           <ogc:Filter xmlns:ogc="http://www.opengis.net/ogc">
             <ogc:And>

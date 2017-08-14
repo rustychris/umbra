@@ -56,22 +56,22 @@ class UmbraOpenLayer(base_class, FORM_CLASS):
         for fmt in umbra_common.ug_formats:
             self.formatCombo.addItem(fmt['long_name'])
 
-        self.lineEdit.setText(default_sun_grid)
+        if 'fmt' in self.umbra.openlayer_state:
+            idx=self.formatCombo.findText(fmt['long_name'])
+            if idx>=0:
+                self.formatCombo.setCurrentIndex(idx)
+        self.lineEdit.setText(self.umbra.openlayer_state.get('path',default_sun_grid))
 
         self.browseButton.clicked.connect(self.on_browse)
         self.buttonBox.accepted.connect(self.on_ok_clicked)
         self.buttonBox.rejected.connect(self.on_cancel_clicked)
-        print "Connected the signals..."
 
     def closeEvent(self, event):
-        print "Got closeEvent"
         self.closingPlugin.emit()
         event.accept()
 
     def on_browse(self):
         fmt=self.fmt()
-        print "browse clicked, self=",self
-        print "fmt is ",fmt
 
         if fmt['is_dir']:
             path=QtGui.QFileDialog.getExistingDirectory(self,'Open %s grid'%fmt['name'],
@@ -79,7 +79,6 @@ class UmbraOpenLayer(base_class, FORM_CLASS):
         else:
             path=QtGui.QFileDialog.getOpenFileName(self, 'Open %s grid'%fmt['name'], 
                                                    os.environ['HOME'])
-        print "Filename ",path
         if path is not None:
             self.lineEdit.setText( path )
         return True 
@@ -96,15 +95,17 @@ class UmbraOpenLayer(base_class, FORM_CLASS):
     def on_ok_clicked(self):
         path=self.lineEdit.text()
         fmt=self.fmt()
-        print "Will open layer ",path
-        
+
+        # Save this state for the next time openlayer is used
+        self.umbra.openlayer_state['path']=path
+        self.umbra.openlayer_state['fmt']=fmt
+
         my_layer = umbra_layer.UmbraLayer.open_layer(umbra=self.umbra,
                                                      grid_format=fmt['name'],
                                                      path=path)
-        print "Adding layer",my_layer
         my_layer.register_layers()
         
     def on_cancel_clicked(self):
-        print "Cancel!"
+        pass
 
 

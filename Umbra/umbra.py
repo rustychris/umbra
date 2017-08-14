@@ -58,13 +58,6 @@ import umbra_editor_tool
 
 scope="Umbra" # for reading/writing project files
 
-if 0: # not sure if this is messing things up. doesn't seem to matter.
-    reload(umbra_openlayer)
-    reload(umbra_savelayer)
-    reload(unstructured_grid)
-    reload(umbra_layer)
-    reload(umbra_editor_tool)
-
 class Boiler(object):
     """QGIS Plugin Implementation."""
     def __init__(self, iface):
@@ -214,6 +207,8 @@ class Umbra(Boiler):
         self.canvas=self.iface.mapCanvas()
         self.gridlayers=[]
 
+        self.openlayer_state={}
+
         QgsProject.instance().writeProject.connect(self.on_writeProject)
         iface.projectRead.connect(self.on_readProject)
 
@@ -299,7 +294,10 @@ class Umbra(Boiler):
     #     log.info("disconnected")
 
     def unload(self):
-        """Removes the plugin menu item and icon from QGIS GUI."""
+        """Removes the plugin menu item and icon from QGIS GUI.
+        should remove any plugin state, layers, etc., 
+        should end with reversing the steps of initGui
+        """
 
         self.log.info("** UNLOAD Umbra")
 
@@ -328,6 +326,10 @@ class Umbra(Boiler):
         # remove the toolbar(?)
         self.toolbar=None
 
+        # decommission the editor
+        self.editor_tool.unload()
+        self.editor_tool=None
+
         self.dockwidget_hide() # ideally really remove it, but maybe good enough to just hide.
         
         self.log.info("** done with UNLOAD Umbra")
@@ -338,7 +340,7 @@ class Umbra(Boiler):
         if not self.pluginIsActive:
             self.pluginIsActive = True
 
-            print "** STARTING Umbra"
+            log.info("** STARTING Umbra")
             self.dockwidget_show()
 
             # if this is omitted, be sure to also skip over
@@ -376,8 +378,9 @@ class Umbra(Boiler):
                 # NB: possible that a group is selected here, but we
                 # have no way of checking for that.
                 return False
+
         for gridlayer in self.gridlayers:
-            self.log.info('Checking for layers in %s'%gridlayer)
+            self.log.info('Checking if %s is one of ours'%gridlayer)
             for layer in gridlayer.layers:
                 if clayer==layer:
                     return True
@@ -472,6 +475,8 @@ class Umbra(Boiler):
 
     def register_grid(self,ul):
         self.gridlayers.append(ul)
+    def unregister_grid(self,ul):
+        self.gridlayers.remove(ul)
 
     def grid_names(self):
         return [gl.name
@@ -482,20 +487,20 @@ class Umbra(Boiler):
             if gl.name==name:
                 return gl
         return None
-        
-        
-    def on_layer_changed(self,layer):
-        if layer is not None:
-            print "on_layer_changed"
-            self.log.info('on layer changed')
-            print "layer is ",layer
-            # Not sure why, but using layer.id() was triggering an error
-            # about the layer being deleted.  Hmm - this is still somehow
-            # related to an error about the layer being deleted.
-            if self.current_layer_is_umbra(layer):
-                self.log.info("Setting map tool to ours")
-                self.iface.mapCanvas().setMapTool(self.editor_tool)
-                self.log.info("Done with setting map tool to ours")
+
+    # This is currently handled in the editor tool itself.
+    # def on_layer_changed(self,layer):
+    #     if layer is not None:
+    #         self.log.info("on_layer_changed: layer is %s"%layer)
+    #         self.log.info("that was the calling stack for on_layer_changed")
+    # 
+    #         # Not sure why, but using layer.id() was triggering an error
+    #         # about the layer being deleted.  Hmm - this is still somehow
+    #         # related to an error about the layer being deleted.
+    #         if self.current_layer_is_umbra(layer):
+    #             self.log.info("Setting map tool to ours")
+    #             self.iface.mapCanvas().setMapTool(self.editor_tool)
+    #             self.log.info("Done with setting map tool to ours")
 
 
     def on_writeProject(self,doc):
@@ -519,7 +524,6 @@ class Umbra(Boiler):
             tag="Grid%04d/"%i
             self.log.info("on_readProject: reading from tag %s"%tag)
 
-            # gl.write_to_project(prj,scope,doc,"grid%04d/"%i)
             gl=umbra_layer.UmbraLayer.load_from_project(self,prj,scope,tag)
 
             self.log.info("on_readProject: done with tag %s"%tag)

@@ -46,9 +46,27 @@ class UmbraSaveLayer(base_class, FORM_CLASS):
 
         self.setupUi(self)
 
+        gridlayer=self.umbra.active_gridlayer()
+        if gridlayer is None:
+            print "No grid selected?!"
+            short_fmt=None
+            grid_path=None
+        else:
+            short_fmt=gridlayer.grid_format
+            grid_path=gridlayer.path
+
         for fmt in umbra_common.ug_formats:
             self.formatCombo.addItem(fmt['long_name'])
-        
+
+        for idx,fmt in enumerate(umbra_common.ug_formats):
+            if fmt['name']==short_fmt:
+                print "Setting format combo index to %s"%idx
+                self.formatCombo.setCurrentIndex(idx)
+
+        if grid_path is not None:
+            self.lineEdit.setText(grid_path)
+            print "Using previous save path %s"%grid_path
+            
         self.browseButton.clicked.connect(self.on_browse)
         self.buttonBox.accepted.connect(self.on_ok_clicked)
         self.buttonBox.rejected.connect(self.on_cancel_clicked)
@@ -80,11 +98,13 @@ class UmbraSaveLayer(base_class, FORM_CLASS):
         path=self.lineEdit.text()
         fmt=self.fmt()
 
-        grid=self.umbra.current_grid()
-        if grid is None:
+        gridlayer=self.umbra.active_gridlayer()
+        if gridlayer is None:
             print "No grid selected?!"
             return
 
+        grid=gridlayer.grid
+        
         if fmt['name']=='SUNTANS':
             grid.write_suntans(path)
         elif fmt['name']=='pickle':
@@ -95,6 +115,8 @@ class UmbraSaveLayer(base_class, FORM_CLASS):
             dfm_grid.write_dfm(grid,path)
         elif fmt['name']=='UnTRIM':
             grid.write_untrim08(path)
+
+        gridlayer.update_savestate(path=path,grid_format=fmt['name'])
 
     def on_cancel_clicked(self):
         pass

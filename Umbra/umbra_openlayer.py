@@ -59,8 +59,14 @@ class UmbraOpenLayer(base_class, FORM_CLASS):
         if 'fmt' in self.umbra.openlayer_state:
             idx=self.formatCombo.findText(fmt['long_name'])
             if idx>=0:
+                print "Setting format combo index to %s"%idx
                 self.formatCombo.setCurrentIndex(idx)
-        self.lineEdit.setText(self.umbra.openlayer_state.get('path',default_sun_grid))
+            else:
+                print "No match in combo to '%s'"%fmt['long_name']
+        default=self.umbra.openlayer_state.get('path',default_sun_grid)
+
+        # print "Default path is %s"%default
+        self.lineEdit.setText(default)
 
         self.browseButton.clicked.connect(self.on_browse)
         self.buttonBox.accepted.connect(self.on_ok_clicked)

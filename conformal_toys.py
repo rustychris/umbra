@@ -67,3 +67,5 @@ ax.axis('equal')
 # How would it work to interpolate between local transforms like that?
 # The original space is just a long rectangular strip, x0.
 # For a given point in rectangular space
+
+# The form

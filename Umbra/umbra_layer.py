@@ -73,6 +73,10 @@ def update_cell_quality(grid,cells=None,with_callback=True):
 
 # The edge quality assigned to an edge without two neighbors.
 lonely_edge_quality=1.0
+
+# Test both for center spacing, and for center-edge spacing
+one_sided_test=True
+
 def update_edge_quality(g,edges=None,with_callback=True):
     # First part is calculating the values
     if edges is None:
@@ -82,12 +86,21 @@ def update_edge_quality(g,edges=None,with_callback=True):
     # this had been recalculating for all edges
     g.edge_to_cells(e=edges)
 
-    diffs=vc[g.edges['cells'][edges,1]] - vc[g.edges['cells'][edges,0]] 
-    if 0: # unsigned distance:
-        c2c=mag(diffs)
-    else: # signed distance
-        normals=g.edges_normals(edges)
-        c2c=normals[...,0]*diffs[...,0] + normals[...,1]*diffs[...,1]
+    normals=g.edges_normals(edges)
+    dist_signed=lambda d: normals[...,0]*d[...,0] + normals[...,1]*d[...,1]
+
+    if not one_sided_test:
+        diffs=vc[g.edges['cells'][edges,1]] - vc[g.edges['cells'][edges,0]]
+        c2c=dist_signed(diffs)
+    else:
+        diff_left =vc[g.edges['cells'][edges,1]] - ec[edges]
+        diff_right=ec[edges] - vc[g.edges['cells'][edges,0]]
+        # Factor of 2 so that overall range is similar to double-sided test
+        c2cl=2*dist_signed(diff_left)
+        c2cr=2*dist_signed(diff_right)
+
+        c2c=np.minimum(c2cl,c2cr)
+        
     A=g.cells_area()
     Acc= A[g.edges['cells'][edges,:]].sum(axis=1)
     c2c=c2c / np.sqrt(Acc) # normalized - should be 1.0 for square grid.
@@ -767,6 +780,16 @@ class UmbraLayer(object):
         
         self.undo_stack=QUndoStack()
 
+    def update_savestate(self,**kws):
+        """
+        Called after saving the grid to a new file, to update the layer's information
+        for future saves.
+        """
+        if 'grid_format' in kws:
+            self.grid_format=kws['grid_format']
+        if 'path' in kws:
+            self.path=kws['path']
+            
     def write_to_project(self,prj,scope,doc,tag):
         # had been scope here, but pretty sure it should be tag.
         if not tag.endswith('/'):
@@ -882,6 +905,12 @@ class UmbraLayer(object):
                 grid=unstructured_grid.UnstructuredGrid.from_pickle(path)
             elif grid_format=='DFM':
                 grid=dfm_grid.DFMGrid(fn=path)
+            elif grid_format=='UGRID':
+                grid=unstructured_grid.UnstructuredGrid.from_ugrid(nc=path)
+            elif grid_format=='UnTRIM':
+                grid=unstructured_grid.UnTRIM08Grid(grd_fn=path)
+            elif grid_format=='SHP':
+                grid=unstructured_grid.UnstructuredGrid.from_shp(grd_fn=path)
             else:
                 raise Exception("Need to add other grid types, like %s!"%grid_format)
         return grid

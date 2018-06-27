@@ -32,7 +32,7 @@ FORM_CLASS, base_class = uic.loadUiType(os.path.join(
 
 import umbra_layer
 import umbra_common
-import unstructured_grid
+from stompy.grid import unstructured_grid
 
 class UmbraNewLayer(base_class, FORM_CLASS):
 

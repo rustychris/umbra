@@ -66,7 +66,7 @@ class UmbraSaveLayer(base_class, FORM_CLASS):
         if grid_path is not None:
             self.lineEdit.setText(grid_path)
             print "Using previous save path %s"%grid_path
-            
+
         self.browseButton.clicked.connect(self.on_browse)
         self.buttonBox.accepted.connect(self.on_ok_clicked)
         self.buttonBox.rejected.connect(self.on_cancel_clicked)
@@ -84,7 +84,7 @@ class UmbraSaveLayer(base_class, FORM_CLASS):
         if path is not None:
             self.lineEdit.setText( path )
         return True 
-        
+
     def fmt(self): # should be abstracted to common class
         sel=self.formatCombo.currentText()
 
@@ -93,7 +93,10 @@ class UmbraSaveLayer(base_class, FORM_CLASS):
                 return fmt
 
         assert False
-        
+
+    def check_existing(self,path,fmt):
+        return os.path.exists(path)
+
     def on_ok_clicked(self):
         path=self.lineEdit.text()
         fmt=self.fmt()
@@ -104,17 +107,33 @@ class UmbraSaveLayer(base_class, FORM_CLASS):
             return
 
         grid=gridlayer.grid
-        
+
+        overwrite=False
+        exists=self.check_existing(path,fmt)
+
+        if exists:
+            reply = QtGui.QMessageBox.question(self.iface.mainWindow(), 'Overwrite?',
+                                               'Overwrite existing file?',
+                                               QtGui.QMessageBox.Yes, QtGui.QMessageBox.No)
+            if reply==QtGui.QMessageBox.Yes:
+                overwrite=True
+            else:
+                # not sure how to just return to the dialog
+                return False
+
         if fmt['name']=='SUNTANS':
-            grid.write_suntans(path)
+            if grid.max_sides==3:
+                grid.write_suntans(path,overwrite=overwrite)
+            else:
+                grid.write_suntans_hybrid(path,overwrite=overwrite)
         elif fmt['name']=='pickle':
-            grid.write_pickle(path)
+            grid.write_pickle(path,overwrite=overwrite)
         elif fmt['name']=='UGRID':
-            grid.write_ugrid(path)
+            grid.write_ugrid(path,overwrite=overwrite)
         elif fmt['name']=='DFM':
-            dfm_grid.write_dfm(grid,path)
+            dfm_grid.write_dfm(grid,path,overwrite=overwrite)
         elif fmt['name']=='UnTRIM':
-            grid.write_untrim08(path)
+            grid.write_untrim08(path,overwrite=overwrite)
 
         gridlayer.update_savestate(path=path,grid_format=fmt['name'])
 

@@ -8,7 +8,7 @@ import logging
 log=logging.getLogger('umbra.editor')
 
 # Copied / boilerplated from cadtools/singlesegmentfindertoolpy
-import umbra_layer 
+import umbra_layer
 
 import numpy as np
 import traceback
@@ -53,7 +53,7 @@ class SlowOpDialog(QDialog):
         # log.info("Calling setupUI")
         # self.setupUi(self)
         self.iface=iface
-        
+
     def startWorker(self, thunk):
         # create a new worker instance
         worker = Worker(thunk)
@@ -94,7 +94,7 @@ class SlowOpDialog(QDialog):
         self.iface.messageBar().popWidget(self.messageBar)
         # close the dialog:
         self.close()
-        
+
         if ret is not None:
             # report the result
             layer, total_area = ret
@@ -105,8 +105,6 @@ class SlowOpDialog(QDialog):
                                                   'See the message log for more information.' ),
                                                   level=QgsMessageBar.CRITICAL, duration=3)
 
-            
-    
 class UmbraEditorTool(QgsMapTool):
     node_click_pixels=10
     edge_click_pixels=10
@@ -118,13 +116,13 @@ class UmbraEditorTool(QgsMapTool):
     #rightbutton = 2
     #midbutton = 4
     #edit_mode = 'edgenode'
-    
+
     def __init__(self, iface, umbra):
         self.iface=iface
         self.canvas = iface.mapCanvas()
         self.umbra=umbra # to get references to the grid
         self.log=log
-        
+
         super(UmbraEditorTool,self).__init__(self.canvas)
 
         #our own fancy cursor
@@ -148,11 +146,11 @@ class UmbraEditorTool(QgsMapTool):
                                       "    ++.....+    ",
                                       "      ++.++     ",
                                       "       +.+      "]))
-        # Create actions 
+        # Create actions
         self.action_coverage_editor = QAction(QIcon(":/plugins/Umbra/icon.png"),
                                               "Edit unstructured mesh geometry",
                                               self.iface.mainWindow())
-        self.action_coverage_editor.setCheckable(True) 
+        self.action_coverage_editor.setCheckable(True)
         self.action_coverage_editor.setEnabled(True)
         # handle_tool_select has been dummied for a while.  probably this is ready
         # to be removed, too.
@@ -161,7 +159,7 @@ class UmbraEditorTool(QgsMapTool):
         #QObject.connect(self.iface, SIGNAL("currentLayerChanged(QgsMapLayer*)"), self.handle_layer_changed)
         # can we use the newer syntax?
         self.iface.currentLayerChanged.connect(self.handle_layer_changed)
-        
+
         # track state of ongoing operations
         self.op_action=None
         self.op_node=None
@@ -180,7 +178,7 @@ class UmbraEditorTool(QgsMapTool):
         self.log.info("Tool deactivated")
 
     def handle_layer_changed(self):
-        """ 
+        """
         set the tool to enabled if the new layer is an UmbraLayer
         it's possible that this would be better off in umbra
         """
@@ -204,7 +202,7 @@ class UmbraEditorTool(QgsMapTool):
         pix_y = event.pos().y()
 
         map_to_pixel=self.canvas.getCoordinateTransform()
-        
+
         map_point = map_to_pixel.toMapCoordinates(pix_x,pix_y)
         map_xy=[map_point.x(),map_point.y()]
         res=dict(node=None,edge=None,cell=None)
@@ -289,9 +287,9 @@ class UmbraEditorTool(QgsMapTool):
         gl=self.gridlayer()
         if gl is None:
             return
-        
+
         self.log.info("Merging nodes of edge?")
-        
+
         items=self.event_to_item(event,types=['edge'])
         if items['edge'] is not None:
             gl.merge_nodes_of_edge(items['edge'])
@@ -397,7 +395,7 @@ class UmbraEditorTool(QgsMapTool):
             return gl.add_node(x=map_xy) 
         else:
             return items['node']
-            
+
     # def canvasMoveEvent(self, event):
     #     x = event.pos().x()
     #     y = event.pos().y()
@@ -435,7 +433,7 @@ class UmbraEditorTool(QgsMapTool):
         super(UmbraEditorTool,self).keyPressEvent(event)
         key=event.key()
         txt=event.text()
-        
+
         self.log.info("keyPress %r %s"%(key,txt) )
         # weird, but seems that shift comes through, but not 
         # space??  doesn't even show up.
@@ -443,7 +441,6 @@ class UmbraEditorTool(QgsMapTool):
         # that sounds like backspace rather than delete.
 
         # Might want to add 'm' for merge selected nodes?
-        
         if txt == ' ':
             self.toggle_cell(event)
         elif txt == 'z':
@@ -456,7 +453,7 @@ class UmbraEditorTool(QgsMapTool):
             self.merge_nodes_of_edge(event)
         elif key == Qt.Key_Delete or key == Qt.Key_Backspace:
             # A little shaky here, but I think the idea is that
-            # we accept it if we handle it, which is good b/c 
+            # we accept it if we handle it, which is good b/c
             # otherwise qgis will complain that the layer isn't editable.
             if self.delete(event):
                 self.log.info("Trying to accept this Delete event")
@@ -500,10 +497,10 @@ class UmbraEditorTool(QgsMapTool):
             gl.redo()
         else:
             self.log.info('editor got redo request, but has no grid layer')
-        
+
     def clear_op(self):
         self.op_node=None
-        self.op_action=None 
+        self.op_action=None
 
     def isZoomTool(self):
         return False
@@ -515,6 +512,6 @@ class UmbraEditorTool(QgsMapTool):
         # not sure about this..
         # return True
 
-        # it /is/ an edit tool, but isEditTool() is only useful when the layer in 
+        # it /is/ an edit tool, but isEditTool() is only useful when the layer in
         # question is a proper vector layer.
         return False

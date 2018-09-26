@@ -22,6 +22,8 @@
 """
 import os
 import logging
+import six
+
 log=logging.getLogger('umbra')
 log.setLevel(logging.DEBUG)
 fmter=logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -29,12 +31,12 @@ if 0: # stream output
     ch=logging.StreamHandler()
 else:
     ch=logging.StreamHandler(open(os.path.join(os.path.dirname(__file__),'log'),'wt'))
-    
+
 ch.setLevel(logging.DEBUG)
 ch.setFormatter(fmter)
 log.addHandler(ch)
 log.info('Loading umbra')
-    
+
 from PyQt4.QtCore import QSettings, QTranslator, qVersion, QCoreApplication, Qt
 from PyQt4.QtGui import QAction, QIcon
 # Initialize Qt resources from file resources.py
@@ -43,6 +45,9 @@ import resources
 from qgis.core import (QgsPluginLayerRegistry,QgsMapLayerRegistry,
                        QgsProject)
 
+from stompy.grid import unstructured_grid
+six.moves.reload_module(unstructured_grid)
+
 # Import the code for the DockWidget
 from umbra_dockwidget import UmbraDockWidget
 
@@ -50,8 +55,6 @@ import os.path
 
 # Import the dialogs:
 from . import (umbra_openlayer, umbra_savelayer, umbra_newlayer, combine_grids)
-
-from stompy.grid import unstructured_grid
 
 import umbra_layer
 import umbra_editor_tool
@@ -193,17 +196,17 @@ class Boiler(object):
 the_umbra=None
 
 class Umbra(Boiler):
-    """  
+    """
     Core more specific to the Umbra plugin
-    """ 
+    """
     def __init__(self, iface):
         global the_umbra
         the_umbra=self
-        
+
         self.log=log
         super(Umbra,self).__init__(iface)
         self.log.info('Firing up Umbra')
-        
+
         self.canvas=self.iface.mapCanvas()
         self.gridlayers=[]
 
@@ -231,13 +234,13 @@ class Umbra(Boiler):
                         parent=self.iface.mainWindow(),
                         add_to_menu=True,
                         add_to_toolbar=False)
-        
+
         self.add_action(icon_path,text='New Umbra layer',
                         callback=self.new_layer,
                         parent=self.iface.mainWindow(),
                         add_to_menu=True,
                         add_to_toolbar=False)
-        
+
         self.add_action(icon_path,text='Save Umbra layer',
                         callback=self.save_layer,
                         parent=self.iface.mainWindow(),

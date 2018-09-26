@@ -43,7 +43,7 @@ class GridCommand(QUndoCommand):
 
     def undo(self):
         self.grid.revert(self.checkpoint)
-        
+
     def redo(self):
         # might be used in the future to allow exactly one redo()
         if self.redo_thunk is not None:
@@ -64,12 +64,25 @@ def update_cell_quality(grid,cells=None,with_callback=True):
             cells_errors=enumerate(errors)
         else:
             cells_errors=zip(cells,errors)
-            
+
         for c,err in cells_errors:
             if not grid.cells['deleted'][c]:
                 grid.modify_cell(c,cell_quality=err)
     else:
         grid.cells['cell_quality'][cells]=errors
+
+
+def update_node_degree(grid,nodes=None,with_callback=True):
+    if nodes is None:
+        nodes=np.nonzero(~grid.nodes['deleted'])[0]
+
+    for n in nodes:
+        new_degree=grid.node_degree(n)
+        if grid.nodes['degree'][n]!=new_degree:
+            if with_callback:
+                grid.modify_node(n,degree=new_degree)
+            else:
+                grid.nodes['degree'][n]=new_degree
 
 # The edge quality assigned to an edge without two neighbors.
 lonely_edge_quality=1.0
@@ -79,37 +92,61 @@ one_sided_test=True
 
 def update_edge_quality(g,edges=None,with_callback=True):
     # First part is calculating the values
+    print("Edges came in as ",edges)
+
     if edges is None:
-        edges=slice(None)
+        # edges=slice(None)
+        # This code will usually get called with specific indices,
+        # so don't worry about optimizing the code for slices
+        # or global evaluation
+        edges=np.nonzero( ~g.edges['deleted'] )[0]
+    elif isinstance(edges,slice):
+        edges=np.arange(g.Nedges())[edges]
+    elif isinstance(edges,list):
+        edges=np.asarray(edges,np.int32)
+
+    # so now edges is guaranteed to be an array of indices
+    print("edges dtype is ",edges.dtype)
+
+    # these could become performance bottle necks
     vc=g.cells_center()
     ec=g.edges_center()
+
     # this had been recalculating for all edges
     g.edge_to_cells(e=edges)
 
-    normals=g.edges_normals(edges)
+    # need special treatment for edges that don't have two cells.
+    external=np.any(g.edges['cells'][edges,:]<0,axis=1)
+    c2c=np.zeros( len(external), np.float64)
+
+    int_edges=edges[~external]
+
+    # this did not before have the int_edges bit, but that
+    # I think was a problem because d is coming in just for int_edges,
+    # but normals was not.
+    normals=g.edges_normals(int_edges)
     dist_signed=lambda d: normals[...,0]*d[...,0] + normals[...,1]*d[...,1]
 
     if not one_sided_test:
-        diffs=vc[g.edges['cells'][edges,1]] - vc[g.edges['cells'][edges,0]]
-        c2c=dist_signed(diffs)
+        diffs=vc[g.edges['cells'][int_edges,1]] - vc[g.edges['cells'][int_edges,0]]
+        c2c[~external]=dist_signed(diffs)
     else:
-        diff_left =vc[g.edges['cells'][edges,1]] - ec[edges]
-        diff_right=ec[edges] - vc[g.edges['cells'][edges,0]]
+        diff_left =vc[g.edges['cells'][int_edges,1]] - ec[int_edges]
+        diff_right=ec[int_edges] - vc[g.edges['cells'][int_edges,0]]
         # Factor of 2 so that overall range is similar to double-sided test
         c2cl=2*dist_signed(diff_left)
         c2cr=2*dist_signed(diff_right)
 
-        c2c=np.minimum(c2cl,c2cr)
-        
-    A=g.cells_area()
-    Acc= A[g.edges['cells'][edges,:]].sum(axis=1)
-    c2c=c2c / np.sqrt(Acc) # normalized - should be 1.0 for square grid.
+        c2c[~external]=np.minimum(c2cl,c2cr)
+
+    cell_select=g.edges['cells'][int_edges,:]
+    Acc=g.cells_area(cell_select).sum(axis=1)
+
+    c2c[~external] /= np.sqrt(Acc) # normalized - should be 1.0 for square grid.
     # used to set inf on borders, but that means auto-scaling color limits
-    # don't work. 
-    c2c[ np.any(g.edges['cells'][edges,:]<0,axis=1) ] = lonely_edge_quality
+    # don't work.
+    c2c[ external ] = lonely_edge_quality
     if with_callback:
-        if isinstance(edges,slice):
-            edges=np.arange(g.Nedges())[slice]
         for e,quality in zip(edges,c2c):
             g.modify_edge(e,edge_quality=quality)
     else:
@@ -137,7 +174,7 @@ class UmbraSubLayer(object):
             attr_idxs = pr.attributeIndexes() #  list of ints
             pr.deleteAttributes(attr_idxs)
             qlayer.updateFields() # tell the vector layer to fetch changes from the provider
-            
+
         self.qlayer=self.create_qlayer(existing=qlayer)
 
         self.populate_qlayer()
@@ -146,29 +183,29 @@ class UmbraSubLayer(object):
     def freeze(self):
         self.frozen=True
         self.disconnect_grid()
-        
+
     def thaw(self):
         self.frozen=False
         self.connect_grid()
         # Makes use of the fact that populate_qlayer() drops all existing features
         self.populate_qlayer()
-        
+
     def create_qlayer(self,existing=None):
         return None
-        
+
     def extend_grid(self):
-        """ 
+        """
         install callbacks or additional fields as
         needed
         """
         pass
     def connect_grid(self):
-        """ 
+        """
         part of extend grid - just the adding callbacks part
         """
         pass
     def unextend_grid(self):
-        """ 
+        """
         remove those callbacks or additional fields
         """
         pass
@@ -182,7 +219,7 @@ class UmbraSubLayer(object):
     def predefined_style(self,name):
         sld_path=os.path.join(here,'styles',name+'.sld')
         self.qlayer.loadSldStyle(sld_path)
-        
+
 class UmbraNodeLayer(UmbraSubLayer):
     def extend_grid(self):
         g=self.grid
@@ -194,7 +231,7 @@ class UmbraNodeLayer(UmbraSubLayer):
         self.grid.subscribe_after('modify_node',self.on_modify_node)
         self.grid.subscribe_after('add_node',self.on_add_node)
         self.grid.subscribe_before('delete_node',self.on_delete_node)
-        
+
     def unextend_grid(self):
         g=self.grid
         g.delete_node_field('feat_id')
@@ -203,7 +240,7 @@ class UmbraNodeLayer(UmbraSubLayer):
         self.grid.unsubscribe_after('modify_node',self.on_modify_node)
         self.grid.unsubscribe_after('add_node',self.on_add_node)
         self.grid.unsubscribe_before('delete_node',self.on_delete_node)
-        
+
     def create_qlayer(self,existing=None):
         if existing:
             # assumes that caller has cleared out the data table
@@ -226,18 +263,18 @@ class UmbraNodeLayer(UmbraSubLayer):
 
             if fname in ['x','feat_id']:
                 continue
-            
+
             if np.issubdtype(ftype,np.int):
                 attrs.append( QgsField(fname,QVariant.Int) )
                 casters.append(int)
-            elif np.issubdtype(ftype,np.float):
+            elif np.issubdtype(ftype,np.floating):
                 attrs.append( QgsField(fname,QVariant.Double) )
                 casters.append(float)
             else:
                 self.log.info("Not ready for other datatypes")
-        self.attrs=attrs 
+        self.attrs=attrs
         self.casters=casters
-        
+
         pr = qlayer.dataProvider()
         pr.addAttributes(attrs)
         qlayer.updateFields() # tell the vector layer to fetch changes from the provider
@@ -245,7 +282,7 @@ class UmbraNodeLayer(UmbraSubLayer):
         if not existing:
             # nice clean black dot
             symbol = QgsMarkerSymbolV2.createSimple({'outline_style':'no',
-                                                     'name': 'circle', 
+                                                     'name': 'circle',
                                                      'size_unit':'MM',
                                                      'size':'1',
                                                      'color': 'black'})
@@ -279,7 +316,7 @@ class UmbraNodeLayer(UmbraSubLayer):
             typecode=attr.type()
             caster=self.casters[idx]
             item=self.grid.nodes[n]
-            
+
             if name=='node_id':
                 feat.setAttribute(idx,caster(n))
             else:
@@ -290,7 +327,7 @@ class UmbraNodeLayer(UmbraSubLayer):
         changed=False
 
         attr_changes={fid:{}}
-            
+
         for idx,attr in enumerate(self.attrs):
             name=attr.name()
             if name in k:
@@ -305,10 +342,10 @@ class UmbraNodeLayer(UmbraSubLayer):
             geom=self.node_geometry(n)
             self.qlayer.dataProvider().changeGeometryValues({fid:geom})
             changed=True
-            
+
         if changed:
             self.qlayer.triggerRepaint()
-        
+
     def on_add_node(self,g,func_name,return_value,**k):
         n=return_value
         geom=self.node_geometry(n)
@@ -319,7 +356,7 @@ class UmbraNodeLayer(UmbraSubLayer):
 
         self.grid.nodes['feat_id'][n] = outFeats[0].id()
         self.qlayer.triggerRepaint()
-        
+
     def on_delete_node(self,g,func_name,n,**k):
         self.qlayer.dataProvider().deleteFeatures([self.grid.nodes['feat_id'][n]])
         self.qlayer.triggerRepaint()
@@ -347,7 +384,7 @@ class UmbraNodeLayer(UmbraSubLayer):
         # Seems that unstructured_grid isn't actually ready for this,
         # but has many of the pieces
         self.grid.merge_nodes(nodes[0],nodes[1])
-        
+
 
 class UmbraEdgeLayer(UmbraSubLayer):
     def create_qlayer(self,existing=None):
@@ -355,7 +392,7 @@ class UmbraEdgeLayer(UmbraSubLayer):
             qlayer=existing
         else:
             qlayer=QgsVectorLayer("LineString"+self.crs,self.prefix+"-edges","memory")
-        
+
         pr = qlayer.dataProvider()
 
         e_attrs=[QgsField("edge_id",QVariant.Int)]
@@ -372,7 +409,7 @@ class UmbraEdgeLayer(UmbraSubLayer):
 
             if fname in ['nodes','feat_id']:
                 continue
-            
+
             if fname=='cells':
                 e_attrs += [QgsField("c0", QVariant.Int),
                             QgsField("c1", QVariant.Int)]
@@ -386,12 +423,12 @@ class UmbraEdgeLayer(UmbraSubLayer):
                     casters.append(float)
                 else:
                     self.log.info("Not ready for other datatypes")
-        self.e_attrs=e_attrs 
+        self.e_attrs=e_attrs
         self.casters=casters
-        
+
         pr.addAttributes(e_attrs)
         qlayer.updateFields() # tell the vector layer to fetch changes from the provider
-        
+
         if not existing:
             # clean, thin black style
             symbol = QgsLineSymbolV2.createSimple({'line_style':'solid',
@@ -427,7 +464,7 @@ class UmbraEdgeLayer(UmbraSubLayer):
             typecode=eattr.type()
             caster=self.casters[idx]
             edge=self.grid.edges[j]
-            
+
             if name=='edge_id':
                 feat.setAttribute(idx,caster(j))
             elif name=='c0':
@@ -442,7 +479,7 @@ class UmbraEdgeLayer(UmbraSubLayer):
             #     feat.setAttribute(idx,float(self.grid.edges[name][j]))
             # else:
             #     continue
-        
+
     def extend_grid(self):
         g=self.grid
         if 'feat_id' not in g.edges.dtype.names:
@@ -453,7 +490,7 @@ class UmbraEdgeLayer(UmbraSubLayer):
         g=self.grid
         g.delete_edge_field('feat_id','edge_quality')
         self.disconnect_grid()
-        
+
     def connect_grid(self):
         self.grid.subscribe_after('add_edge',self.on_add_edge)
         self.grid.subscribe_before('delete_edge',self.on_delete_edge)
@@ -477,14 +514,17 @@ class UmbraEdgeLayer(UmbraSubLayer):
         self.grid.edges['feat_id'][j] = outFeats[0].id()
         self.qlayer.triggerRepaint()
         self.log.info("Just added an edge")
-        
+
     def on_delete_edge(self,g,func_name,j,**k):
         self.qlayer.dataProvider().deleteFeatures([self.grid.edges['feat_id'][j]])
+        if self.track_node_degree:
+            update_node_degree(self.grid,self.grid.edges['nodes'][j],with_callback=True)
+
         self.qlayer.triggerRepaint()
     def on_modify_node(self,g,func_name,n,**k):
         if 'x' not in k:
             return
-        
+
         edge_geom_changes={}
         # edge centers are not cached at this point, so don't
         # need to update them...
@@ -499,19 +539,19 @@ class UmbraEdgeLayer(UmbraSubLayer):
     def on_modify_edge(self,g,func_name,j,**k):
         fid=g.edges['feat_id'][j]
         attr_changes={fid:{}}
-            
+
         for idx,attr in enumerate(self.e_attrs):
             name=attr.name()
             if name in k:
                 attr_changes[fid][idx]=self.casters[idx](k[name])
         if not attr_changes[fid]:
             return
-        
+
         provider=self.qlayer.dataProvider()
         provider.changeAttributeValues(attr_changes)
-        
+
         self.qlayer.triggerRepaint()
-                       
+
     def edge_geometry(self,j):
         seg=self.grid.nodes['x'][self.grid.edges['nodes'][j]]
         pnts=[QgsPoint(seg[0,0],seg[0,1]),
@@ -522,7 +562,7 @@ class UmbraEdgeLayer(UmbraSubLayer):
 class UmbraCellLayer(UmbraSubLayer):
     # the name of the field added to the grid to track the features here
     feat_id_name='feat_id'
-    
+
     def create_qlayer(self,existing=None):
         if existing:
             qlayer=existing
@@ -531,7 +571,7 @@ class UmbraCellLayer(UmbraSubLayer):
 
         c_attrs=[QgsField("cell_id",QVariant.Int)]
         casters=[int]
-        
+
         for fidx,fdesc in enumerate(self.grid.cell_dtype.descr):
             # descr gives string reprs of the types, use dtype
             # to get back to an object.
@@ -735,7 +775,7 @@ class UmbraCellCenterLayer(UmbraCellLayer):
 
     # extend, unextend, on_delete_cell: use inherited method of UmbraCellLayer
     # populate_qlayer(self), selection() also same as cell Layer
-       
+
     def cell_geometry(self,i):
         pnts=[QgsPoint(self.grid.nodes['x'][n,0],
                        self.grid.nodes['x'][n,1])
@@ -743,13 +783,17 @@ class UmbraCellCenterLayer(UmbraCellLayer):
         cc=self.grid.cells_center()
         return QgsGeometry.fromPoint( QgsPoint(cc[i,0],cc[i,1]) )
 
-    
+
 class UmbraLayer(object):
     count=0
 
+    # if true, dynamically update node field
+    # 'degree' with the number of edges it participates in.
+    track_node_degree=True
+
     layer_count=0
     crs="?crs=epsg:26910" # was 4326
-    
+
     def __init__(self,umbra,grid,name=None,path=None,grid_format=None):
         """
         Does not add the layers to the GUI - call register_layers
@@ -766,18 +810,18 @@ class UmbraLayer(object):
         self.grid=grid
 
         self.connect_grid()
-        
+
         self.iface=None # gets set in register_layers
 
         UmbraLayer.layer_count+=1
 
         if name is None:
             name="grid%d"%UmbraLayer.layer_count
-        self.name=name 
+        self.name=name
 
         self.layers=[] # SubLayer objects associated with this grid.
         self.umbra.register_grid(self)
-        
+
         self.undo_stack=QUndoStack()
 
     def update_savestate(self,**kws):
@@ -789,7 +833,7 @@ class UmbraLayer(object):
             self.grid_format=kws['grid_format']
         if 'path' in kws:
             self.path=kws['path']
-            
+
     def write_to_project(self,prj,scope,doc,tag):
         # had been scope here, but pretty sure it should be tag.
         if not tag.endswith('/'):
@@ -814,15 +858,12 @@ class UmbraLayer(object):
         new_layer=cls.open_layer(umbra=umbra,grid_format=grid_format,path=path,name=name)
         new_layer.register_layers(use_existing=True)
         return new_layer
-        
+
     def connect_grid(self):
         """
         Install callbacks on the grid to update cell and edge quality fields.
         The individual layers will be later than these callbacks.
         """
-        #self.grid.subscribe_after('add_cell',self.on_add_cell)
-        #self.grid.subscribe_before('delete_cell',self.on_delete_cell)
-
         g=self.grid
         if 'cell_quality' not in g.cells.dtype.names:
             g.add_cell_field('cell_quality',
@@ -831,11 +872,16 @@ class UmbraLayer(object):
         if 'edge_quality' not in g.edges.dtype.names:
             edge_q=np.zeros(self.grid.Nedges(),'f8')
             g.add_edge_field('edge_quality',edge_q)
-            
+
         update_edge_quality(g,edges=None,with_callback=False)
-            
-        # shortcut the callbacks 
+
+        # shortcut the callbacks
         update_cell_quality(g,with_callback=False)
+
+        if self.track_node_degree:
+            if 'degree' not in g.nodes.dtype.names:
+                g.add_node_field('degree',-np.ones(g.Nnodes(),np.int8))
+            update_node_degree(g,with_callback=False)
 
         self.grid.subscribe_after('modify_node',self.on_modify_node)
         self.grid.subscribe_after('add_cell',self.on_add_cell)
@@ -844,7 +890,7 @@ class UmbraLayer(object):
     def on_modify_node(self,g,func_name,n,**k):
         if 'x' not in k:
             return
-        
+
         cell_changes={}
         cells=self.grid.node_to_cells(n)
         self.grid.cells_center(refresh=cells)
@@ -854,7 +900,7 @@ class UmbraLayer(object):
             cell_edges.update(self.grid.cell_to_edges(i))
 
         self.log.info("UmbraLayer:on_modify_node update cells %s"%cells)
-        
+
         update_cell_quality(self.grid,cells,with_callback=True)
         update_edge_quality(self.grid,list(cell_edges),with_callback=True)
 
@@ -867,7 +913,9 @@ class UmbraLayer(object):
             update_edge_quality(g,edges=[return_value],
                                 with_callback=False)
             # .edges['edge_quality'][j]=lonely_edge_quality
-        
+        if self.track_node_degree:
+            update_node_degree(g,k['nodes'],with_callback=True)
+
     def match_to_qlayer(self,ql):
         # need to either make the names unique, or find a better test.
         # since we can't really enforce the grouped layout, better to make the names
@@ -897,10 +945,10 @@ class UmbraLayer(object):
             # for development, load sample data:
             suntans_path=os.path.join( os.path.dirname(__file__),
                                        "sample_data/sfbay" )
-            grid=unstructured_grid.SuntansGrid(suntans_path)
+            grid=unstructured_grid.UnstructuredGrid.read_suntans(suntans_path)
         else:
             if grid_format=='SUNTANS':
-                grid=unstructured_grid.SuntansGrid(path)
+                grid=unstructured_grid.UnstructuredGrid.read_suntans(path)
             elif grid_format=='pickle':
                 grid=unstructured_grid.UnstructuredGrid.from_pickle(path)
             elif grid_format=='DFM':
@@ -1029,20 +1077,30 @@ class UmbraLayer(object):
 
             # return of groupLayerRelationship is
             # [ ['groupname',['layer_uuid','layer_uuid',..]],...]
-            for layer_uuid in li.groupLayerRelationship()[self.group_index][1]:
+            group_layers=li.groupLayerRelationship()[self.group_index]
+            group_name=group_layers[0]
+            for layer_uuid in group_layers[1]:
                 # these are unicode uniquified layer names.
                 qlayer=mlr.mapLayers()[layer_uuid]
                 # should be <umbra_layer.name>-<tag>
                 self.log.warning("Qlayer name causing problems: %s"%qlayer.name())
-                grid_name,tag = qlayer.name().split('-') 
-                    
+                try:
+                    grid_name,tag = qlayer.name().split('-')
+                except ValueError:
+                    raise Exception("Found layer name '%s' in umbra.  group_index is %s, group_name %s"%
+                                    (qlayer.name(),self.group_index,group_name) )
+
                 # assert self.name==grid_name
+                if tag not in tag_map:
+                    self.log.error("Tag %s does not map to known grid layer class"%tag)
+                    continue
+
                 cls=tag_map[tag]
 
                 sublayer=cls(self.log,self.grid,crs=self.crs,
                              prefix=self.name,tag=tag,qlayer=qlayer)
                 self.register_layer(sublayer,preexisting=True)
-            
+
     def add_centers_layer(self):
         self.register_layer( UmbraCellCenterLayer(self.log,
                                                   self.grid,

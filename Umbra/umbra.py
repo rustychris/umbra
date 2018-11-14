@@ -21,21 +21,10 @@
  ***************************************************************************/
 """
 import os
-import logging
 import six
 
-log=logging.getLogger('umbra')
-log.setLevel(logging.DEBUG)
-fmter=logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-if 0: # stream output
-    ch=logging.StreamHandler()
-else:
-    ch=logging.StreamHandler(open(os.path.join(os.path.dirname(__file__),'log'),'wt'))
-
-ch.setLevel(logging.DEBUG)
-ch.setFormatter(fmter)
-log.addHandler(ch)
-log.info('Loading umbra')
+import logging
+log=logging.getLogger('umbra') # setup in __init__.py
 
 from PyQt4.QtCore import QSettings, QTranslator, qVersion, QCoreApplication, Qt
 from PyQt4.QtGui import QAction, QIcon
@@ -71,7 +60,7 @@ class Boiler(object):
             application at run time.
         :type iface: QgsInterface
         """
-        print "** Top of __init__"
+        log.info("** Top of Boiler.__init__")
         # Save reference to the QGIS interface
         self.iface = iface
 
@@ -99,7 +88,7 @@ class Boiler(object):
         self.toolbar = self.iface.addToolBar(u'Umbra')
         self.toolbar.setObjectName(u'Umbra')
 
-        print "** INITIALIZING Umbra"
+        log.info("Boiler: ** INITIALIZING Umbra")
 
         self.pluginIsActive = False 
         self.dockwidget = None
@@ -204,8 +193,10 @@ class Umbra(Boiler):
         the_umbra=self
 
         self.log=log
-        super(Umbra,self).__init__(iface)
+
         self.log.info('Firing up Umbra')
+        super(Umbra,self).__init__(iface)
+        self.log.info('just called Boiler __init__')
 
         self.canvas=self.iface.mapCanvas()
         self.gridlayers=[]
@@ -309,7 +300,7 @@ class Umbra(Boiler):
         self.iface.projectRead.disconnect(self.on_readProject)
 
         self.log.info("** disconnected project signals")
-        
+
         # remove any umbra layers - doesn't seem to be working.
         for gridlayer in self.gridlayers:
             gridlayer.remove_all_qlayers()
@@ -325,7 +316,7 @@ class Umbra(Boiler):
         except Exception as exc:
             self.log.error("While removing toolbaricon")
             self.log.error(str(exc))
-        
+
         # remove the toolbar(?)
         self.toolbar=None
 
@@ -334,7 +325,7 @@ class Umbra(Boiler):
         self.editor_tool=None
 
         self.dockwidget_hide() # ideally really remove it, but maybe good enough to just hide.
-        
+
         self.log.info("** done with UNLOAD Umbra")
 
     #--------------------------------------------------------------------------
@@ -374,20 +365,7 @@ class Umbra(Boiler):
             self.dockwidget.hide()
 
     def current_layer_is_umbra(self,clayer=None):
-        # moved from tool
-        if clayer is None:
-            clayer = self.canvas.currentLayer()
-            if clayer is None:
-                # NB: possible that a group is selected here, but we
-                # have no way of checking for that.
-                return False
-
-        for gridlayer in self.gridlayers:
-            self.log.info('Checking if %s is one of ours'%gridlayer)
-            for layer in gridlayer.layers:
-                if clayer==layer:
-                    return True
-        return False
+        return self.active_gridlayer(clayer=clayer) is not None
 
     def current_grid(self):
         gridlayer=self.active_gridlayer()
@@ -410,20 +388,30 @@ class Umbra(Boiler):
                                             iface=self.iface,
                                             umbra=self)
         dialog.exec_()
-        
-    def active_gridlayer(self):
+
+    def active_gridlayer(self,clayer=None):
         if not self.pluginIsActive:
             log.info("active_gridlayer: plugin not active")
             return None
-        
-        clayer = self.canvas.currentLayer()
+
         if clayer is None:
-            return None
-        log.info("Searching for layer " + str(clayer))
+            clayer = self.canvas.currentLayer()
+            if clayer is None:
+                # NB: possible that a group is selected here, but we
+                # have no way of checking for that.
+                return None
+        log.info("active_gridlayer: Searching for layer " + str(clayer))
 
         for gridlayer in self.gridlayers:
             if gridlayer.match_to_qlayer(clayer):
+                self.log.info('  yep - matched %s'%gridlayer)
                 return gridlayer
+            # for layer in gridlayer.layers:
+            #     if clayer==layer.qlayer:
+            #         self.log.info('  yep - one of ours')
+            #         return True
+
+        self.log.info('  nope, no match')
         return None
 
     def show_combine_grids(self):
@@ -431,7 +419,7 @@ class Umbra(Boiler):
                                           iface=self.iface,
                                           umbra=self)
         dialog.exec_()
-    
+
     def save_layer(self):
         glayer = self.active_gridlayer()
         if glayer is None:
@@ -442,15 +430,12 @@ class Umbra(Boiler):
                                               iface=self.iface,
                                               umbra=self)
         dialog.exec_()
-    
+
     def renumber_layer(self):
         glayer = self.active_gridlayer()
         if glayer is None:
             return
         glayer.grid.renumber()
-
-    #def delete_nodes_by_polygon(self):
-    #    pass
 
     def show_cell_centers(self):
         glayer = self.active_gridlayer()
@@ -460,20 +445,21 @@ class Umbra(Boiler):
     def set_cell_quality_style(self):
         glayer = self.active_gridlayer()
         if glayer is not None:
+            self.log.info("set_cell_quality_style: found layer, passing on to it")
             glayer.set_cell_quality_style()
-            
+
     def set_edge_quality_style(self):
         glayer = self.active_gridlayer()
         if glayer is not None:
             glayer.set_edge_quality_style()
-            
+
     def enable_tool(self):
         log.info("Enabled umbra mapTool")
         self.iface.mapCanvas().setMapTool(self.editor_tool)
 
     def run(self):
         """Run method that loads and starts the plugin"""
-        print "** Call to run"
+        self.log.info("** Call to run, which will activate")
         self.activate()
 
     def register_grid(self,ul):
@@ -491,32 +477,30 @@ class Umbra(Boiler):
                 return gl
         return None
 
-    # This is currently handled in the editor tool itself.
-    # def on_layer_changed(self,layer):
-    #     if layer is not None:
-    #         self.log.info("on_layer_changed: layer is %s"%layer)
-    #         self.log.info("that was the calling stack for on_layer_changed")
-    # 
-    #         # Not sure why, but using layer.id() was triggering an error
-    #         # about the layer being deleted.  Hmm - this is still somehow
-    #         # related to an error about the layer being deleted.
-    #         if self.current_layer_is_umbra(layer):
-    #             self.log.info("Setting map tool to ours")
-    #             self.iface.mapCanvas().setMapTool(self.editor_tool)
-    #             self.log.info("Done with setting map tool to ours")
-
-
     def on_writeProject(self,doc):
         self.log.info("Got a writeProject(%s)"%(str(doc)))
-        
+
         prj=QgsProject.instance()
 
         prj.writeEntry(scope,"GridCount",len(self.gridlayers))
-        for i,gl in enumerate(self.gridlayers): 
+        self.log.info("wrote GridCount=%d"%len(self.gridlayers))
+        self.log.info("scope is %s"%scope)
+
+        for i,gl in enumerate(self.gridlayers):
             gl.write_to_project(prj,scope,doc,"Grid%04d/"%i)
 
     def on_readProject(self):
         self.log.info("Got a readProject signal")
+
+        # not sure what the right level of cleanup is --
+        # qgis takes care of cleaning up the legend.
+        # at the very least, have to update our own state
+        while self.gridlayers:
+            # awkward, but avoids iterating on list while it's
+            # being modified
+            self.unregister_grid(self.gridlayers[0])
+
+        self.log.info("readProject: starting with %d gridlayers"%len(self.gridlayers))
 
         prj=QgsProject.instance()
 
@@ -530,5 +514,9 @@ class Umbra(Boiler):
             gl=umbra_layer.UmbraLayer.load_from_project(self,prj,scope,tag)
 
             self.log.info("on_readProject: done with tag %s"%tag)
+        if len(self.gridlayers):
+            self.log.info("readProject: we have umbra layers, so activate plugin")
+            self.activate()
+        else:
+            self.log.info("readProject: no umbra layers, so skip activate plugin")
 
-            

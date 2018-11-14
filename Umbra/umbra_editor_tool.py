@@ -198,13 +198,10 @@ class UmbraEditorTool(QgsMapTool):
 
     def event_to_item(self,event,types=['node','edge']):
         self.log.info("Start of event_to_item self=%s"%id(self))
-        pix_x = event.pos().x()
-        pix_y = event.pos().y()
+        map_xy,pix_xy=self.event_to_map_xy(event)
 
         map_to_pixel=self.canvas.getCoordinateTransform()
 
-        map_point = map_to_pixel.toMapCoordinates(pix_x,pix_y)
-        map_xy=[map_point.x(),map_point.y()]
         res=dict(node=None,edge=None,cell=None)
         g=self.grid()
         if g is None:
@@ -217,7 +214,7 @@ class UmbraEditorTool(QgsMapTool):
             if n is not None:
                 node_xy=g.nodes['x'][n]
                 node_pix_point = map_to_pixel.transform(node_xy[0],node_xy[1])
-                dist2= (pix_x-node_pix_point.x())**2 + (pix_y-node_pix_point.y())**2 
+                dist2= (pix_xy[0]-node_pix_point.x())**2 + (pix_xy[1]-node_pix_point.y())**2 
                 self.log.info("Distance^2 is %s"%dist2)
                 if dist2<=self.node_click_pixels**2:
                     # back to pixel space to calculate distance
@@ -228,7 +225,7 @@ class UmbraEditorTool(QgsMapTool):
             if j is not None:
                 edge_xy=g.edges_center()[j]
                 edge_pix_point = map_to_pixel.transform(edge_xy[0],edge_xy[1])
-                dist2= (pix_x-edge_pix_point.x())**2 + (pix_y-edge_pix_point.y())**2 
+                dist2= (pix_xy[0]-edge_pix_point.x())**2 + (pix_xy[1]-edge_pix_point.y())**2 
                 self.log.info("Distance^2 is %s"%dist2)
                 if dist2<=self.edge_click_pixels**2:
                     # back to pixel space to calculate distance
@@ -245,6 +242,8 @@ class UmbraEditorTool(QgsMapTool):
     # 'z': undo
     # 'Z': redo
     # 'm': try to merge nodes of selected edge
+    # 's': split an edge and any adjacent cells
+    # 'j': join cells sharing an edge
     # Delete or backspace: delete selected elements
     # What would be good for merging nodes?
     #  could draw an edge, then have a key for merging nodes
@@ -270,6 +269,9 @@ class UmbraEditorTool(QgsMapTool):
         self.log.info("Press event end")
 
     def event_to_map_xy(self,event):
+        """
+        Return map_xy,pix_xy from event
+        """
         if isinstance(event,QKeyEvent): 
             mouse_pnt=self.canvas.mouseLastXY()
         else:
@@ -281,7 +283,7 @@ class UmbraEditorTool(QgsMapTool):
         map_to_pixel=self.canvas.getCoordinateTransform()
         map_point = map_to_pixel.toMapCoordinates(pix_x,pix_y)
         map_xy=[map_point.x(),map_point.y()]
-        return map_xy
+        return map_xy,[pix_x,pix_y]
 
     def merge_nodes_of_edge(self,event):
         gl=self.gridlayer()
@@ -297,13 +299,35 @@ class UmbraEditorTool(QgsMapTool):
         else:
             self.log.info("no feature hits")
 
+    def split_edge(self,event):
+        gl=self.gridlayer()
+        if gl is None:
+            return
+        items=self.event_to_item(event,types=['edge'])
+        if items['edge'] is not None:
+            gl.split_edge(e=items['edge'])
+            self.clear_op() # safety first
+        else:
+            self.log.info("no feature hits")
+
+    def merge_cells(self,event):
+        gl=self.gridlayer()
+        if gl is None:
+            return
+        items=self.event_to_item(event,types=['edge'])
+        if items['edge'] is not None:
+            gl.merge_cells(e=items['edge'])
+            self.clear_op() # safety first
+        else:
+            self.log.info("no feature hits")
+
     def optimize_local(self,event):
         gl=self.gridlayer()
         if gl is None:
             return
 
         self.log.info("Trying a local optimize")
-        map_xy=self.event_to_map_xy(event)
+        map_xy,_=self.event_to_map_xy(event)
 
         n_iters=self.umbra.dockwidget.orthogNIters.value()
 
@@ -333,7 +357,7 @@ class UmbraEditorTool(QgsMapTool):
             return
         
         self.log.info("Got a toggle cell event")
-        map_xy=self.event_to_map_xy(event)
+        map_xy,_=self.event_to_map_xy(event)
         
         gl.toggle_cell_at_point(map_xy)
 
@@ -451,6 +475,10 @@ class UmbraEditorTool(QgsMapTool):
             self.optimize_local(event)
         elif txt == 'm':
             self.merge_nodes_of_edge(event)
+        elif txt == 's':
+            self.split_edge(event)
+        elif txt == 'j':
+            self.merge_cells(event)
         elif key == Qt.Key_Delete or key == Qt.Key_Backspace:
             # A little shaky here, but I think the idea is that
             # we accept it if we handle it, which is good b/c
@@ -476,8 +504,11 @@ class UmbraEditorTool(QgsMapTool):
     def delete(self,event):
         gl=self.gridlayer()
         if gl is not None:
+            self.log.info('calling delete_selected')
             gl.delete_selected()
             return True
+        else:
+            self.log.info('delete(), but no gridlayer so ignore')
         return False
 
     def undo(self):
@@ -500,7 +531,7 @@ class UmbraEditorTool(QgsMapTool):
 
     def clear_op(self):
         self.op_node=None
-        self.op_action=None
+        self.op_action=None 
 
     def isZoomTool(self):
         return False
@@ -512,6 +543,6 @@ class UmbraEditorTool(QgsMapTool):
         # not sure about this..
         # return True
 
-        # it /is/ an edit tool, but isEditTool() is only useful when the layer in
+        # it /is/ an edit tool, but isEditTool() is only useful when the layer in 
         # question is a proper vector layer.
         return False

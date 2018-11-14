@@ -424,3 +424,12 @@ should have a way to call into the editor and uninstall things.
  - handle_layer_changed is installed in the tool constructor.
  - who installs the tool? umbra does, in initGui.
 
+--
+
+Seems to have trouble with removed layers?
+ - i.e. I remove all umbra layers from the legend, save the project, and the file still
+   lists them.
+ - need to listen for layers being removed?
+ - it should be doing that already -- via on_layer_deleted.
+ one issue is that umbra doesn't clear gridlayers when a new project is loaded.
+ 

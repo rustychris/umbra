@@ -21,7 +21,21 @@
  ***************************************************************************/
  This script initializes the plugin, making it known to QGIS.
 """
+import os
+import logging
 
+log=logging.getLogger('umbra')
+log.setLevel(logging.DEBUG)
+fmter=logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+if 0: # stream output
+    ch=logging.StreamHandler()
+else:
+    ch=logging.StreamHandler(open(os.path.join(os.path.dirname(__file__),'log'),'at'))
+
+ch.setLevel(logging.DEBUG)
+ch.setFormatter(fmter)
+log.addHandler(ch)
+log.info('umbra __init__')
 
 # noinspection PyPep8Naming
 def classFactory(iface):  # pylint: disable=invalid-name
@@ -30,6 +44,7 @@ def classFactory(iface):  # pylint: disable=invalid-name
     :param iface: A QGIS interface instance.
     :type iface: QgsInterface
     """
-    #
+    log.info('umbra __init__.classFactory')
+
     from .umbra import Umbra
     return Umbra(iface)

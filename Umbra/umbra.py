@@ -20,6 +20,8 @@
  *                                                                         *
  ***************************************************************************/
 """
+from __future__ import print_function
+from __future__ import absolute_import
 import os
 import six
 
@@ -27,7 +29,8 @@ import logging
 log=logging.getLogger('umbra') # setup in __init__.py
 
 from qgis.PyQt.QtCore import QSettings, QTranslator, qVersion, QCoreApplication, Qt
-from qgis.PyQt.QtGui import QAction, QIcon
+from qgis.PyQt.QtWidgets import QAction
+from qgis.PyQt.QtGui import QIcon
 # Initialize Qt resources from file resources.py
 import resources
 
@@ -38,15 +41,15 @@ from stompy.grid import unstructured_grid
 six.moves.reload_module(unstructured_grid)
 
 # Import the code for the DockWidget
-from umbra_dockwidget import UmbraDockWidget
+from .umbra_dockwidget import UmbraDockWidget
 
 import os.path
 
 # Import the dialogs:
 from . import (umbra_openlayer, umbra_savelayer, umbra_newlayer, combine_grids)
 
-import umbra_layer
-import umbra_editor_tool
+from . import umbra_layer
+from . import umbra_editor_tool
 
 scope="Umbra" # for reading/writing project files
 
@@ -208,8 +211,7 @@ class Umbra(Boiler):
 
     def initGui(self):
         """Create the menu entries and toolbar icons inside the QGIS GUI."""
-
-        print "** initGui"
+        print("** initGui")
 
         icon_path = ':/plugins/Umbra/icon.png'
         # self.add_action(
@@ -358,7 +360,7 @@ class Umbra(Boiler):
                 # show the dockwidget
                 self.iface.addDockWidget(Qt.LeftDockWidgetArea, self.dockwidget)
             self.dockwidget.show()
-            print "Done starting"
+            print("Done starting")
 
     def dockwidget_hide(self):
         if self.dockwidget is not None:

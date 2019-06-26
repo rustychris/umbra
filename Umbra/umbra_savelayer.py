@@ -19,6 +19,8 @@
  *                                                                         *
  ***************************************************************************/
 """
+from __future__ import print_function
+from __future__ import absolute_import
 
 import os
 
@@ -28,7 +30,7 @@ from qgis.PyQt.QtCore import pyqtSignal
 FORM_CLASS, base_class = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'umbra_savelayer_base.ui'))
 
-import umbra_common
+from . import umbra_common
 from stompy.model.delft import dfm_grid
 
 class UmbraSaveLayer(base_class, FORM_CLASS):
@@ -48,7 +50,7 @@ class UmbraSaveLayer(base_class, FORM_CLASS):
 
         gridlayer=self.umbra.active_gridlayer()
         if gridlayer is None:
-            print "No grid selected?!"
+            print("No grid selected?!")
             short_fmt=None
             grid_path=None
         else:
@@ -60,12 +62,12 @@ class UmbraSaveLayer(base_class, FORM_CLASS):
 
         for idx,fmt in enumerate(umbra_common.ug_formats):
             if fmt['name']==short_fmt:
-                print "Setting format combo index to %s"%idx
+                print("Setting format combo index to %s"%idx)
                 self.formatCombo.setCurrentIndex(idx)
 
         if grid_path is not None:
             self.lineEdit.setText(grid_path)
-            print "Using previous save path %s"%grid_path
+            print("Using previous save path %s"%grid_path)
 
         self.browseButton.clicked.connect(self.on_browse)
         self.buttonBox.accepted.connect(self.on_ok_clicked)
@@ -80,7 +82,7 @@ class UmbraSaveLayer(base_class, FORM_CLASS):
         else:
             path=QtGui.QFileDialog.getSaveFileName(self, 'Filename for %s'%fmt['name'], 
                                                    os.environ['HOME'])
-        print "Filename ",path
+        print("Filename ",path)
         if path is not None:
             self.lineEdit.setText( path )
         return True 
@@ -103,7 +105,7 @@ class UmbraSaveLayer(base_class, FORM_CLASS):
 
         gridlayer=self.umbra.active_gridlayer()
         if gridlayer is None:
-            print "No grid selected?!"
+            print("No grid selected?!")
             return
 
         grid=gridlayer.grid

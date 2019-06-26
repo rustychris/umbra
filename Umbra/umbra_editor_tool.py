@@ -1,3 +1,4 @@
+from __future__ import print_function
 from qgis.PyQt import QtGui, QtCore
 from qgis.PyQt.QtGui import *
 from qgis.PyQt.QtCore import *
@@ -7,7 +8,7 @@ import logging
 log=logging.getLogger('umbra.editor')
 
 # Copied / boilerplated from cadtools/singlesegmentfindertoolpy
-import umbra_layer
+from . import umbra_layer
 
 import numpy as np
 import traceback
@@ -33,14 +34,14 @@ class Worker(QObject):
             #     self.progress.emit(100)
             #     ret = (self.layer, total_area,)
             ret="some return value"
-        except Exception, e:
+        except Exception as e:
             # forward the exception upstream
             self.error.emit(e, traceback.format_exc())
         self.finished.emit(ret)
     def kill(self):
         self.killed = True
     finished = QtCore.pyqtSignal(object)
-    error = QtCore.pyqtSignal(Exception, basestring)
+    error = QtCore.pyqtSignal(Exception, str)
     progress = QtCore.pyqtSignal(float)
 
 
@@ -170,7 +171,7 @@ class UmbraEditorTool(QgsMapTool):
         self.iface.currentLayerChanged.disconnect(self.handle_layer_changed)
 
     def activate(self):
-        print "Call to activate for the editor tool"
+        print("Call to activate for the editor tool")
         self.canvas.setCursor(self.cursor)
 
     def deactivate(self):

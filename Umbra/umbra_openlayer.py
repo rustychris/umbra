@@ -19,6 +19,8 @@
  *                                                                         *
  ***************************************************************************/
 """
+from __future__ import print_function
+from __future__ import absolute_import
 
 import os
 
@@ -33,8 +35,8 @@ from qgis.core import QgsPluginLayerRegistry,QgsMapLayerRegistry
 FORM_CLASS, base_class = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'umbra_openlayer_base.ui'))
 
-import umbra_layer
-import umbra_common
+from . import umbra_layer
+from . import umbra_common
 
 class UmbraOpenLayer(base_class, FORM_CLASS):
 
@@ -59,10 +61,10 @@ class UmbraOpenLayer(base_class, FORM_CLASS):
         if 'fmt' in self.umbra.openlayer_state:
             idx=self.formatCombo.findText(fmt['long_name'])
             if idx>=0:
-                print "Setting format combo index to %s"%idx
+                print("Setting format combo index to %s"%idx)
                 self.formatCombo.setCurrentIndex(idx)
             else:
-                print "No match in combo to '%s'"%fmt['long_name']
+                print("No match in combo to '%s'"%fmt['long_name'])
         default=self.umbra.openlayer_state.get('path',default_sun_grid)
 
         # print "Default path is %s"%default

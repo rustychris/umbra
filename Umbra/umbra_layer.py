@@ -7,7 +7,7 @@ try:
     from six import iteritems
 except ImportError:
     def iteritems(d):
-        return d.iteritems()
+        return iter(d.items())
 
 sys.path.append( os.path.join(os.environ["HOME"],"python") )
 
@@ -29,7 +29,7 @@ here=os.path.dirname(__file__)
 # now it manages the layers and data specific to a grid
 
 # Maybe the Undo handling will live here?
-from qgis.PyQt.QtGui import QUndoCommand,QUndoStack
+from qgis.PyQt.QtWidgets import QUndoCommand, QUndoStack
 class GridCommand(QUndoCommand):
     def __init__(self,g,description="edit grid",redo=None):
         super(GridCommand,self).__init__(description)
@@ -63,7 +63,7 @@ def update_cell_quality(grid,cells=None,with_callback=True):
         if cells is None:
             cells_errors=enumerate(errors)
         else:
-            cells_errors=zip(cells,errors)
+            cells_errors=list(zip(cells,errors))
 
         for c,err in cells_errors:
             if not grid.cells['deleted'][c]:

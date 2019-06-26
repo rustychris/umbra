@@ -19,6 +19,8 @@
  *                                                                         *
  ***************************************************************************/
 """
+from __future__ import print_function
+from __future__ import absolute_import
 
 import os
 
@@ -30,8 +32,8 @@ from qgis.core import QgsPluginLayerRegistry,QgsMapLayerRegistry
 FORM_CLASS, base_class = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'umbra_newlayer_base.ui'))
 
-import umbra_layer
-import umbra_common
+from . import umbra_layer
+from . import umbra_common
 from stompy.grid import unstructured_grid
 
 class UmbraNewLayer(base_class, FORM_CLASS):
@@ -60,6 +62,6 @@ class UmbraNewLayer(base_class, FORM_CLASS):
         my_layer.register_layers()
         
     def on_cancel_clicked(self):
-        print "Cancel!"
+        print("Cancel!")
 
 

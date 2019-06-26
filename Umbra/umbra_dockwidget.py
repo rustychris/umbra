@@ -25,8 +25,8 @@ import os
 import logging
 log=logging.getLogger('umbra')
 
-from PyQt4 import QtGui, uic
-from PyQt4.QtCore import pyqtSignal
+from qgis.PyQt import QtGui, uic
+from qgis.PyQt.QtCore import pyqtSignal
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'umbra_dockwidget_base.ui'))
@@ -51,8 +51,11 @@ class UmbraDockWidget(QtGui.QDockWidget, FORM_CLASS):
         self.cellQualButton.clicked.connect(self.umbra.set_cell_quality_style)
         self.edgeQualButton.clicked.connect(self.umbra.set_edge_quality_style)
 
-    def on_cell_quality(self):
-        log.warning('cell quality button')
+        self.addEdgesButton.clicked.connect(self.umbra.add_edge_layer)
+        self.addCellsButton.clicked.connect(self.umbra.add_cell_layer)
+        self.addNodesButton.clicked.connect(self.umbra.add_node_layer)
+
+        self.mergeGridsButton.clicked.connect(self.umbra.merge_grids)
 
     def closeEvent(self, event):
         # self.closingDockWidget.emit()

@@ -14,7 +14,7 @@ sys.path.append( os.path.join(os.environ["HOME"],"python") )
 from qgis.core import ( QgsGeometry, QgsPoint, QgsFeature,QgsVectorLayer, QgsField,
                         QgsMapLayerRegistry, 
                         QgsMarkerSymbolV2, QgsLineSymbolV2, QgsFillSymbolV2 )
-from PyQt4.QtCore import QVariant
+from qgis.PyQt.QtCore import QVariant
 
 import logging
 log=logging.getLogger('umbra.layer')
@@ -29,7 +29,7 @@ here=os.path.dirname(__file__)
 # now it manages the layers and data specific to a grid
 
 # Maybe the Undo handling will live here?
-from PyQt4.QtGui import QUndoCommand,QUndoStack
+from qgis.PyQt.QtGui import QUndoCommand,QUndoStack
 class GridCommand(QUndoCommand):
     def __init__(self,g,description="edit grid",redo=None):
         super(GridCommand,self).__init__(description)
@@ -92,7 +92,7 @@ one_sided_test=True
 
 def update_edge_quality(g,edges=None,with_callback=True):
     # First part is calculating the values
-    print("Edges came in as ",edges)
+    # print("Edges came in as ",edges)
 
     if edges is None:
         # edges=slice(None)
@@ -106,7 +106,7 @@ def update_edge_quality(g,edges=None,with_callback=True):
         edges=np.asarray(edges,np.int32)
 
     # so now edges is guaranteed to be an array of indices
-    print("edges dtype is ",edges.dtype)
+    # print("edges dtype is ",edges.dtype)
 
     # these could become performance bottle necks
     vc=g.cells_center()
@@ -169,6 +169,8 @@ class UmbraSubLayer(object):
         self.prefix=prefix
         self.frozen=False
 
+        self.log.info("SubLayer: qlayer=%s"%qlayer)
+        
         if qlayer is not None:
             self.log.info("Clearing old fields from layer")
             pr = qlayer.dataProvider()
@@ -374,6 +376,8 @@ class UmbraNodeLayer(UmbraSubLayer):
 
         self.grid.nodes['feat_id'][n] = outFeats[0].id()
         self.qlayer.triggerRepaint()
+
+        self.log.info("on_add_node: requested repaint from qlayer=%s"%self.qlayer)
 
     def on_delete_node(self,g,func_name,n,**k):
         self.qlayer.dataProvider().deleteFeatures([self.grid.nodes['feat_id'][n]])
@@ -947,16 +951,6 @@ class UmbraLayer(object):
                 return True
         return False
 
-    # This is superceded by self.name
-    #_grid_name=None
-    # def grid_name(self):
-    #     """ used to label the group
-    #     """
-    #     if self._grid_name is None:
-    #         UmbraLayer.count+=1
-    #         self._grid_name="grid%4d"%UmbraLayer.count
-    #     return self._grid_name
-
     @classmethod
     def open_layer(cls,umbra,grid_format,path,name=None):
         g=cls.load_grid(path=path,grid_format=grid_format)
@@ -1074,6 +1068,13 @@ class UmbraLayer(object):
         else:
             self.log.warning("Group '%s' not found to remove"%grp_name)
 
+    # tags are used to map between names and the sublayer 
+    # class implementation:
+    tag_map=dict(cells=UmbraCellLayer,
+                 edges=UmbraEdgeLayer,
+                 nodes=UmbraNodeLayer,
+                 centers=UmbraCellCenterLayer)
+
     def register_layers(self,use_existing=False):
         """
         Add individual feature layers for this grid.
@@ -1084,13 +1085,8 @@ class UmbraLayer(object):
         self.iface=self.umbra.iface
         self.create_group(use_existing=use_existing)
 
-        # tags are used to map between names and the sublayer 
-        # class implementation:
-        tag_map=dict(cells=UmbraCellLayer,
-                     edges=UmbraEdgeLayer,
-                     nodes=UmbraNodeLayer,
-                     centers=UmbraCellCenterLayer)
-
+        self.log.info("register_layers(), use_existing=%s"%use_existing)
+        
         if use_existing:
             # Try to scan the group to find which layers to instantiate
             # but if no layers are there, fall through and create
@@ -1125,11 +1121,11 @@ class UmbraLayer(object):
                                     (qlayer.name(),group_index,group_name) )
 
                 # assert self.name==grid_name
-                if tag not in tag_map:
+                if tag not in self.tag_map:
                     self.log.error("Tag %s does not map to known grid layer class"%tag)
                     continue
 
-                cls=tag_map[tag]
+                cls=self.tag_map[tag]
 
                 sublayer=cls(self,prefix=self.name,qlayer=qlayer,tag=tag)
                 self.register_layer(sublayer,preexisting=True)
@@ -1137,16 +1133,16 @@ class UmbraLayer(object):
 
         if not use_existing:
             for tag in ['cells','edges','nodes']:
-                cls=tag_map[tag]
-                self.register_layer( cls(self,
-                                         prefix=self.name,
-                                         tag=tag) )
+                self.add_layer_by_tag(tag)
 
+    def add_layer_by_tag(self,tag):
+        cls=self.tag_map[tag]
+        self.register_layer( cls(self,
+                                 prefix=self.name,
+                                 tag=tag) )
 
     def add_centers_layer(self):
-        self.register_layer( UmbraCellCenterLayer(self,
-                                                  prefix=self.name,
-                                                  tag='centers') )
+        self.add_layer_by_tag('centers')
 
     def set_edge_quality_style(self):
         sl = self.layer_by_tag('edges')
@@ -1187,7 +1183,7 @@ class UmbraLayer(object):
     
     def find_closest_node(self,xy):
         # xy: [x,y]
-        print "Finding closest node to ",xy
+        # print "Finding closest node to ",xy
         return self.grid.select_nodes_nearest(xy)
     
     def find_closest_cell(self,xy):
@@ -1196,7 +1192,7 @@ class UmbraLayer(object):
 
     def extent(self):
         xmin,xmax,ymin,ymax = self.grid.bounds()
-        print "extent() called on UmbraLayer"
+        # print "extent() called on UmbraLayer"
         return QgsRectangle(xmin,ymin,xmax,ymax)
       
     def renumber(self):
@@ -1306,10 +1302,10 @@ class UmbraLayer(object):
 
         self.undo_stack.push(cmd)
 
-    def split_edge(self,e):
+    def split_edge(self,e,merge_thresh=-1):
         cmd=GridCommand(self.grid,
                         "Split edge",
-                        lambda e=e: self.grid.split_edge(e))
+                        lambda e=e: self.grid.split_edge(e,merge_thresh=merge_thresh))
         self.undo_stack.push(cmd)
     def merge_cells(self,e):
         cmd=GridCommand(self.grid,

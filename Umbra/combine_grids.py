@@ -1,7 +1,7 @@
 import os
 
-from PyQt4 import QtGui, uic
-from PyQt4.QtCore import pyqtSignal #, QMetaObject
+from qgis.PyQt import QtGui, uic
+from qgis.PyQt.QtCore import pyqtSignal #, QMetaObject
 
 from qgis.core import QgsPluginLayerRegistry,QgsMapLayerRegistry
 
@@ -33,17 +33,17 @@ class CombineGrids(base_class, FORM_CLASS):
 
         self.buttonBox.accepted.connect(self.on_ok_clicked)
         self.buttonBox.rejected.connect(self.on_cancel_clicked)
-        print "Connected the signals..."
+        print("Connected the signals...")
 
     def on_ok_clicked(self):
         src_layer=self.umbra.name_to_grid(self.comboBox_src.currentText())
         target_layer=self.umbra.name_to_grid(self.comboBox_target.currentText())
 
-        print "Would be merging %s into %s"%(src_layer,target_layer)
+        print("Would be merging %s into %s"%(src_layer,target_layer))
 
         target_layer.combine_with(src_layer)
         
     def on_cancel_clicked(self):
-        print "Cancel!"
+        print("Cancel!")
 
 

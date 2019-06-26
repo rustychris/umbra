@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>244</width>
-    <height>141</height>
+    <height>225</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -48,6 +48,51 @@
        <widget class="QPushButton" name="cellQualButton">
         <property name="text">
          <string>Cell Qual.</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="0">
+       <widget class="QPushButton" name="addNodesButton">
+        <property name="text">
+         <string>+Node layer</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="1">
+       <widget class="QPushButton" name="addEdgesButton">
+        <property name="text">
+         <string>+Edge layer</string>
+        </property>
+       </widget>
+      </item>
+      <item row="5" column="0">
+       <widget class="QPushButton" name="addCellsButton">
+        <property name="text">
+         <string>+Cell layer</string>
+        </property>
+       </widget>
+      </item>
+      <item row="5" column="1">
+       <widget class="QPushButton" name="mergeGridsButton">
+        <property name="text">
+         <string>Merge</string>
+        </property>
+       </widget>
+      </item>
+      <item row="6" column="1">
+       <widget class="QDoubleSpinBox" name="automerge_thresh">
+        <property name="toolTip">
+         <string>When non-negative, splits will merge co-circular triangles.</string>
+        </property>
+        <property name="value">
+         <double>0.200000000000000</double>
+        </property>
+       </widget>
+      </item>
+      <item row="6" column="0">
+       <widget class="QLabel" name="label_2">
+        <property name="text">
+         <string>Automerge cutoff</string>
         </property>
        </widget>
       </item>

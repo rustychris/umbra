@@ -9,19 +9,20 @@ g=unstructured_grid.UnstructuredGrid.from_ugrid('/home/rusty/mirrors/ucd-X/Arc_H
 zoom=(607049.3789851875, 607112.602248394, 4235362.0737852305, 4235409.18531362)
 plt.figure(1).clf()
 
-g.plot_edges(lw=0.5,color='k',clip=zoom)
+g.plot_edges(lw=4,color='k',clip=zoom,alpha=0.5)
 g.plot_nodes(labeler='id',clip=zoom)
-g.plot_cells(lw=0,color='0.5',alpha=0.3,clip=zoom,zorder=-3)
+g.plot_cells(lw=0,color='0.5',alpha=0.3,clip=zoom,zorder=-3,
+             labeler=lambda i,r: str(i))
 plt.axis(zoom)
 
 ##
 
-g.split_edge(x=np.array([607073.725, 4235389.887]))
-g.split_edge(x=[607078.353, 4235387.52])
-g.split_edge(x=[607088.845, 4235380.44])
-g.split_edge(x=[607083.686, 4235384.11])
+g.split_edge(x=np.array([607073.725, 4235389.887]),merge_thresh=0.2)
+g.split_edge(x=[607078.353, 4235387.52],merge_thresh=0.2)
+g.split_edge(x=[607088.845, 4235380.44],merge_thresh=0.2)
+g.split_edge(x=[607083.686, 4235384.11],merge_thresh=0.2)
 
-##
+## 
 
 # And merge_cells
 

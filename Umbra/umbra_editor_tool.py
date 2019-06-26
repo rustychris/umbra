@@ -1,7 +1,6 @@
-from PyQt4 import QtGui, QtCore
-from PyQt4.QtGui import *
-from PyQt4.QtCore import *
-# from qgis.core import 
+from qgis.PyQt import QtGui, QtCore
+from qgis.PyQt.QtGui import *
+from qgis.PyQt.QtCore import *
 from qgis.gui import QgsMapTool
 
 import logging
@@ -305,7 +304,8 @@ class UmbraEditorTool(QgsMapTool):
             return
         items=self.event_to_item(event,types=['edge'])
         if items['edge'] is not None:
-            gl.split_edge(e=items['edge'])
+            merge_thresh=self.umbra.dockwidget.automerge_thresh.value()
+            gl.split_edge(e=items['edge'],merge_thresh=merge_thresh)
             self.clear_op() # safety first
         else:
             self.log.info("no feature hits")

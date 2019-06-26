@@ -26,8 +26,8 @@ import six
 import logging
 log=logging.getLogger('umbra') # setup in __init__.py
 
-from PyQt4.QtCore import QSettings, QTranslator, qVersion, QCoreApplication, Qt
-from PyQt4.QtGui import QAction, QIcon
+from qgis.PyQt.QtCore import QSettings, QTranslator, qVersion, QCoreApplication, Qt
+from qgis.PyQt.QtGui import QAction, QIcon
 # Initialize Qt resources from file resources.py
 import resources
 
@@ -389,31 +389,52 @@ class Umbra(Boiler):
                                             umbra=self)
         dialog.exec_()
 
-    def active_gridlayer(self,clayer=None):
+    def active_gridlayer(self,clayer=None,multiple=False):
+        """
+        Check either the currently selected layer, or a given clayer(QLayer)
+        to find the corresponding UmbraLayer instance.  Return None if no
+        match is possible.
+        multiple: if True, return a list of all matches
+        clayer can be a QLayer or list thereof
+        """
         if not self.pluginIsActive:
             log.info("active_gridlayer: plugin not active")
             return None
 
         if clayer is None:
-            clayer = self.canvas.currentLayer()
-            if clayer is None:
+            clayer=self.iface.legendInterface().selectedLayers()
+            if len(clayer)==0:
                 # NB: possible that a group is selected here, but we
                 # have no way of checking for that.
-                return None
+                if multiple:
+                    return []
+                else:
+                    return None
+        elif not isinstance(clayer,list):
+            clayer=[clayer]
+
         log.info("active_gridlayer: Searching for layer " + str(clayer))
 
+        hits=[]
+        # This could be sped up with a hash table, though the track record
+        # for keeping state in sync has not been good, so stick with this slower
+        # approach for now.
         for gridlayer in self.gridlayers:
-            if gridlayer.match_to_qlayer(clayer):
-                self.log.info('  yep - matched %s'%gridlayer)
-                return gridlayer
-            # for layer in gridlayer.layers:
-            #     if clayer==layer.qlayer:
-            #         self.log.info('  yep - one of ours')
-            #         return True
+            for one_layer in clayer:
+                if gridlayer.match_to_qlayer(one_layer):
+                    self.log.info('  yep - matched %s'%gridlayer)
+                    if multiple:
+                        hits.append(gridlayer)
+                    else:
+                        return gridlayer
 
-        self.log.info('  nope, no match')
-        return None
-
+        if multiple:
+            self.log.info('  %d hits'%len(hits))
+            return hits
+        else:
+            self.log.info('  nope, no match')
+            return None
+    
     def show_combine_grids(self):
         dialog=combine_grids.CombineGrids(parent=self.iface.mainWindow(),
                                           iface=self.iface,
@@ -436,6 +457,9 @@ class Umbra(Boiler):
         if glayer is None:
             return
         glayer.grid.renumber()
+        # not strictly renumbering, but generally you'd want to drop
+        # unneeded nodes at the same time.
+        glayer.grid.delete_orphan_nodes()
 
     def show_cell_centers(self):
         glayer = self.active_gridlayer()
@@ -452,6 +476,42 @@ class Umbra(Boiler):
         glayer = self.active_gridlayer()
         if glayer is not None:
             glayer.set_edge_quality_style()
+
+    def add_node_layer(self):
+        glayer = self.active_gridlayer()
+        if glayer is not None:
+            glayer.add_layer_by_tag(tag='nodes')
+    def add_edge_layer(self):
+        glayer = self.active_gridlayer()
+        if glayer is not None:
+            glayer.add_layer_by_tag(tag='edges')
+    def add_cell_layer(self):
+        glayer = self.active_gridlayer()
+        if glayer is not None:
+            glayer.add_layer_by_tag(tag='cells')
+    def add_centers_layer(self):
+        glayer = self.active_gridlayer()
+        if glayer is not None:
+            glayer.add_layer_by_tag(tag='centers')
+
+    def merge_grids(self):
+        selected=self.active_gridlayer(multiple=True)
+        if len(selected)<2:
+            self.log.info("Need at least two selected grid layers to merge")
+            return
+
+        gA=selected[0].grid.copy()
+        for l in selected[1:]:
+            gB=l.grid
+            if gB.max_sides>gA.max_sides:
+                gA,gB=gB.copy(),gA
+            gA.add_grid(gB,merge_nodes='auto')
+
+        # Add this grid
+        my_layer = umbra_layer.UmbraLayer(umbra=self,
+                                          grid=gA,name="merged")
+        my_layer.register_layers()
+        self.log.info("Done with merging layers and registered result")
 
     def enable_tool(self):
         log.info("Enabled umbra mapTool")

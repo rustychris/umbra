@@ -2,20 +2,20 @@
 # Umbra
 #
 # Unstructured mesh builder
-#							 -------------------
-#		begin				: 2015-11-10
-#		git sha				: $Format:%H$
-#		copyright			: (C) 2015 by Rusty Holleman
-#		email				: rustychris@gmail.com
+# -------------------
+#	begin				: 2015-11-10
+#	git sha				: $Format:%H$
+#	copyright			: (C) 2015 by Rusty Holleman
+#	email				: rustychris@gmail.com
 # ***************************************************************************/
 #
 #/***************************************************************************
-# *																		 *
+# *	  								    *
 # *   This program is free software; you can redistribute it and/or modify  *
 # *   it under the terms of the GNU General Public License as published by  *
-# *   the Free Software Foundation; either version 2 of the License, or	 *
-# *   (at your option) any later version.								   *
-# *																		 *
+# *   the Free Software Foundation; either version 2 of the License, or	    *
+# *   (at your option) any later version.				    *
+# *							  		    *
 # ***************************************************************************/
 
 #################################################
@@ -73,7 +73,10 @@ PLUGIN_UPLOAD = $(c)/plugin_upload.py
 
 RESOURCE_SRC=$(shell grep '^ *<file' resources.qrc | sed 's@</file>@@g;s/.*>//g' | tr '\n' ' ')
 
-QGISDIR=.qgis2
+# for QGIS 2
+#QGISDIR=.qgis2
+# for QGIS 3
+QGISDIR=.local/share/QGIS/QGIS3/profiles/default
 
 default: compile
 
@@ -106,7 +109,7 @@ test: compile transcompile
 deploy: compile doc transcompile
 	@echo
 	@echo "------------------------------------------"
-	@echo "Deploying plugin to your .qgis2 directory."
+	@echo "Deploying plugin to your QGIS directory.  "
 	@echo "------------------------------------------"
 	# The deploy  target only works on unix like operating system where
 	# the Python plugin directory is located at:

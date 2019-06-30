@@ -27,10 +27,8 @@ import os
 default_sun_grid=os.path.join( os.path.dirname(__file__),
                                "sample_data/sfbay" )
 
-from qgis.PyQt import QtGui, uic
+from qgis.PyQt import QtGui, uic, QtWidgets
 from qgis.PyQt.QtCore import pyqtSignal #, QMetaObject
-
-from qgis.core import QgsPluginLayerRegistry,QgsMapLayerRegistry
 
 FORM_CLASS, base_class = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'umbra_openlayer_base.ui'))
@@ -82,11 +80,11 @@ class UmbraOpenLayer(base_class, FORM_CLASS):
         fmt=self.fmt()
 
         if fmt['is_dir']:
-            path=QtGui.QFileDialog.getExistingDirectory(self,'Open %s grid'%fmt['name'],
-                                                        os.environ['HOME'])
+            path=QtWidgets.QFileDialog.getExistingDirectory(self,'Open %s grid'%fmt['name'],
+                                                            os.environ['HOME'])
         else:
-            path=QtGui.QFileDialog.getOpenFileName(self, 'Open %s grid'%fmt['name'], 
-                                                   os.environ['HOME'])
+            path,_filter=QtWidgets.QFileDialog.getOpenFileName(self, 'Open %s grid'%fmt['name'], 
+                                                       os.environ['HOME'])
         if path is not None:
             self.lineEdit.setText( path )
         return True 

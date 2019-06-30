@@ -432,4 +432,43 @@ Seems to have trouble with removed layers?
  - need to listen for layers being removed?
  - it should be doing that already -- via on_layer_deleted.
  one issue is that umbra doesn't clear gridlayers when a new project is loaded.
+
+--
+
+Migrate to QGIS3:
+
+ - mass deletion of selected nodes is broken: removes them from the display, but does
+   not also remove the associated edges and cells, and also pops up the usual message
+   about editing not being possible. It may only be as broken as it was before -- if
+   the umbra tool is selected and the canvas is active, then we do get the delete key
+   and can handle it, but the event *also* propagates to the GUI where it complains.
+
+ - order of new layers is reversed.
  
+ - toggle cell got out of sync?
+   maybe the spatial index is picking up old cells that are deleted? 
+
+   that now has a bandaid, but there are cases where the index returned is not only
+   deleted, but now off the end of the array.  ==> is there an easy fix to avoid
+   the deleted cells, or do i need more bandaid.
+   
+
+ 
+ - editing attributes:
+      VectorLayer emits attributeValueChanged during editing (before commit)
+
+      committedAttributeValuesChanges when finishing editing.
+         - that works, including the "save edits" button.
+
+
+      these is also an editBuffer(), it would have just the changes, but
+        it is emptied during a commit.
+
+      there is also a beforeCommitChanges() signal, so it would be possible
+      to grab the edit buffer data.
+      
+      I think the way to go is connect to beforeCommitChanges, then make
+      a deep copy of changedAttributeValues and addAttributes, also
+      deleteAttributeIds (?).
+      then also connect to commit, where those changes then get published
+      to the grid.

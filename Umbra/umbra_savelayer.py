@@ -24,7 +24,7 @@ from __future__ import absolute_import
 
 import os
 
-from qgis.PyQt import QtGui, uic
+from qgis.PyQt import QtGui, uic, QtWidgets
 from qgis.PyQt.QtCore import pyqtSignal
 
 FORM_CLASS, base_class = uic.loadUiType(os.path.join(
@@ -77,11 +77,11 @@ class UmbraSaveLayer(base_class, FORM_CLASS):
         fmt=self.fmt()
 
         if fmt['is_dir']:
-            path=QtGui.QFileDialog.getExistingDirectory(self,'Folder for %s'%fmt['name'],
-                                                        os.environ['HOME'])
+            path=QtWidgets.QFileDialog.getExistingDirectory(self,'Folder for %s'%fmt['name'],
+                                                            os.environ['HOME'])
         else:
-            path=QtGui.QFileDialog.getSaveFileName(self, 'Filename for %s'%fmt['name'], 
-                                                   os.environ['HOME'])
+            path,_filter=QtWidgets.QFileDialog.getSaveFileName(self, 'Filename for %s'%fmt['name'], 
+                                                               os.environ['HOME'])
         print("Filename ",path)
         if path is not None:
             self.lineEdit.setText( path )
@@ -114,10 +114,10 @@ class UmbraSaveLayer(base_class, FORM_CLASS):
         exists=self.check_existing(path,fmt)
 
         if exists:
-            reply = QtGui.QMessageBox.question(self.iface.mainWindow(), 'Overwrite?',
-                                               'Overwrite existing file?',
-                                               QtGui.QMessageBox.Yes, QtGui.QMessageBox.No)
-            if reply==QtGui.QMessageBox.Yes:
+            reply = QtWidgets.QMessageBox.question(self.iface.mainWindow(), 'Overwrite?',
+                                                   'Overwrite existing file?',
+                                                   QtWidgets.QMessageBox.Yes, QtWidgets.QMessageBox.No)
+            if reply==QtWidgets.QMessageBox.Yes:
                 overwrite=True
             else:
                 # not sure how to just return to the dialog

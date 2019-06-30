@@ -1,6 +1,7 @@
 from __future__ import print_function
 from qgis.PyQt import QtGui, QtCore
 from qgis.PyQt.QtGui import *
+from qgis.PyQt.QtWidgets import QDialog, QAction
 from qgis.PyQt.QtCore import *
 from qgis.gui import QgsMapTool
 
@@ -163,6 +164,7 @@ class UmbraEditorTool(QgsMapTool):
         # track state of ongoing operations
         self.op_action=None
         self.op_node=None
+        self.op_map_xy=None # start of drag
 
     def unload(self):
         """
@@ -196,40 +198,78 @@ class UmbraEditorTool(QgsMapTool):
     def gridlayer(self):
         return self.umbra.active_gridlayer()
 
-    def event_to_item(self,event,types=['node','edge']):
+    def event_to_item(self,event,types=['node','edge'],include_selection=True,
+                      multiple=False):
+        """
+        Process a mouse or keyboard to look for grid elements (cell, edge, node)
+        close to the mouse.  
+        include_selection: return selected elements of the requested types if any
+         are selected, overriding the mouse location.
+
+        multiple: return lists, with 0,1 or more elements.
+        otherwise, each type will either be None, or a single index
+
+        returns a dictionary with ids or lists of ids for the requested types,
+        plus auxiliary info like map_xy
+        """
         self.log.info("Start of event_to_item self=%s"%id(self))
         map_xy,pix_xy=self.event_to_map_xy(event)
 
         map_to_pixel=self.canvas.getCoordinateTransform()
 
-        res=dict(node=None,edge=None,cell=None)
+        # will reduce to single items at the end if multiple is False
+        res=dict(node=[],edge=[],cell=[])
+
+        # can be handy to have these, and not redo the work to get them
+        res['map_xy']=map_xy
+        res['pix_xy']=pix_xy
+            
         g=self.grid()
         if g is None:
             log.info("event_to_item: no grid available")
             return res
 
         if 'node' in types:
-            n=g.select_nodes_nearest(map_xy)
-            res['node']=None
-            if n is not None:
-                node_xy=g.nodes['x'][n]
-                node_pix_point = map_to_pixel.transform(node_xy[0],node_xy[1])
-                dist2= (pix_xy[0]-node_pix_point.x())**2 + (pix_xy[1]-node_pix_point.y())**2 
-                self.log.info("Distance^2 is %s"%dist2)
-                if dist2<=self.node_click_pixels**2:
+            if include_selection:
+                l=self.gridlayer().layer_by_tag('nodes')
+                if l is not None:
+                    selected=l.selection()
+                    res['node']+=selected
+            if len(res['node'])==0: # fall back to mouse position if no selected nodes
+                n=g.select_nodes_nearest(map_xy)
+                if n is not None:
+                    node_xy=g.nodes['x'][n]
+                    node_pix_point = map_to_pixel.transform(node_xy[0],node_xy[1])
+                    dist2= (pix_xy[0]-node_pix_point.x())**2 + (pix_xy[1]-node_pix_point.y())**2 
+                    self.log.info("Distance^2 is %s"%dist2)
                     # back to pixel space to calculate distance
-                    res['node']=n
+                    if dist2<=self.node_click_pixels**2:
+                        res['node'].append(n)
         if 'edge' in types:
-            j=g.select_edges_nearest(map_xy)
-            res['edge']=None
-            if j is not None:
-                edge_xy=g.edges_center()[j]
-                edge_pix_point = map_to_pixel.transform(edge_xy[0],edge_xy[1])
-                dist2= (pix_xy[0]-edge_pix_point.x())**2 + (pix_xy[1]-edge_pix_point.y())**2 
-                self.log.info("Distance^2 is %s"%dist2)
-                if dist2<=self.edge_click_pixels**2:
-                    # back to pixel space to calculate distance
-                    res['edge']=j
+            if include_selection:
+                l=self.gridlayer().layer_by_tag('edges')
+                if l is not None:
+                    selected=l.selection()
+                    res['edge']+=selected
+                            
+            if len(res['edge'])==0: # fall back to mouse position if no selection
+                j=g.select_edges_nearest(map_xy)
+                if j is not None:
+                    edge_xy=g.edges_center()[j]
+                    edge_pix_point = map_to_pixel.transform(edge_xy[0],edge_xy[1])
+                    dist2= (pix_xy[0]-edge_pix_point.x())**2 + (pix_xy[1]-edge_pix_point.y())**2 
+                    self.log.info("Distance^2 is %s"%dist2)
+                    if dist2<=self.edge_click_pixels**2:
+                        # back to pixel space to calculate distance
+                        res['edge'].append(j)
+
+        if not multiple:
+            for k in types:
+                if len(res[k]):
+                    res[k]=res[k][0]
+                else:
+                    res[k]=None
+                    
         self.log.info( "End of event_to_item self=%s"%id(self) )
         return res
 
@@ -311,6 +351,17 @@ class UmbraEditorTool(QgsMapTool):
         else:
             self.log.info("no feature hits")
 
+    def add_quad_from_edge(self,event):
+        gl=self.gridlayer()
+        if gl is None:
+            return
+        items=self.event_to_item(event,types=['edge'])
+        if items['edge'] is not None:
+            gl.add_quad_from_edge(e=items['edge'])
+            self.clear_op() # safety first
+        else:
+            self.log.info("no feature hits")
+
     def merge_cells(self,event):
         gl=self.gridlayer()
         if gl is None:
@@ -334,7 +385,9 @@ class UmbraEditorTool(QgsMapTool):
 
         if 1:
             # serial approach
+            self.log.info("Starting optimize")
             gl.orthogonalize_local(map_xy,iterations=n_iters)
+            self.log.info("Finish optimize")
         else:
             # threaded!?  this crashes
             thunk=( lambda gl=gl,map_xy=map_xy,n_iters=n_iters:
@@ -363,14 +416,15 @@ class UmbraEditorTool(QgsMapTool):
         gl.toggle_cell_at_point(map_xy)
 
     def start_move_node(self,event):
-        items=self.event_to_item(event,types=['node'])
-        if items['node'] is None:
+        items=self.event_to_item(event,types=['node'],multiple=True)
+        if len(items['node'])==0:
             self.log.info("Didn't hit a node")
             self.clear_op() # just to be safe
         else:
             n=items['node']
             self.log.info("canvas press is %s"%n)
-            self.op_node=n
+            self.op_node=n # list of ids
+            self.op_map_xy=items['map_xy']
             self.op_action='move_node'
 
     def delete_edge_or_node(self,event):
@@ -438,12 +492,12 @@ class UmbraEditorTool(QgsMapTool):
 
         self.log.info("Release with op_node=%s self=%s"%(self.op_node,id(self)))
         if self.op_action=='move_node' and self.op_node is not None:
-            x = event.pos().x()
-            y = event.pos().y()
-            point = self.canvas.getCoordinateTransform().toMapCoordinates(x, y)
-            xy=[point.x(),point.y()]
-            self.log.info( "Modifying location of node %d self=%s"%(self.op_node,id(self)) )
-            gl.modify_node(self.op_node,x=xy)
+            map_xy,pix_xy=self.event_to_map_xy(event)
+            dxy=np.array(map_xy) - np.array(self.op_map_xy)
+            for n in self.op_node:
+                self.log.info( "Modifying location of node %d self=%s"%(n,id(self)) )
+                xy0=gl.grid.nodes['x'][n]
+                gl.modify_node(n,x=xy0+dxy)
             self.clear_op()
         elif self.op_action=='add_edge':
             # all the action happens on the press, and releasing the shift key
@@ -476,8 +530,10 @@ class UmbraEditorTool(QgsMapTool):
             self.optimize_local(event)
         elif txt == 'm':
             self.merge_nodes_of_edge(event)
-        elif txt == 's':
+        elif txt in ['s','S']: # in qgis 3, s is for snap.
             self.split_edge(event)
+        elif txt in ['q']: 
+            self.add_quad_from_edge(event)
         elif txt == 'j':
             self.merge_cells(event)
         elif key == Qt.Key_Delete or key == Qt.Key_Backspace:
@@ -532,6 +588,7 @@ class UmbraEditorTool(QgsMapTool):
 
     def clear_op(self):
         self.op_node=None
+        self.op_map_xy=None
         self.op_action=None 
 
     def isZoomTool(self):

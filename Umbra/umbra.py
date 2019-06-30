@@ -32,10 +32,9 @@ from qgis.PyQt.QtCore import QSettings, QTranslator, qVersion, QCoreApplication,
 from qgis.PyQt.QtWidgets import QAction
 from qgis.PyQt.QtGui import QIcon
 # Initialize Qt resources from file resources.py
-import resources
+from . import resources
 
-from qgis.core import (QgsPluginLayerRegistry,QgsMapLayerRegistry,
-                       QgsProject)
+from qgis.core import QgsProject, Qgis
 
 from stompy.grid import unstructured_grid
 six.moves.reload_module(unstructured_grid)
@@ -404,7 +403,7 @@ class Umbra(Boiler):
             return None
 
         if clayer is None:
-            clayer=self.iface.legendInterface().selectedLayers()
+            clayer=self.iface.layerTreeView().selectedLayers()
             if len(clayer)==0:
                 # NB: possible that a group is selected here, but we
                 # have no way of checking for that.
@@ -462,6 +461,8 @@ class Umbra(Boiler):
         # not strictly renumbering, but generally you'd want to drop
         # unneeded nodes at the same time.
         glayer.grid.delete_orphan_nodes()
+
+        self.iface.messageBar().pushMessage("Done", "Renumbering is complete", level=Qgis.Success, duration=3)
 
     def show_cell_centers(self):
         glayer = self.active_gridlayer()

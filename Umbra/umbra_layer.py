@@ -1,7 +1,10 @@
 import os
+import copy
 import sys
 import numpy as np
 import time
+
+# HERE: https://gis.stackexchange.com/questions/75384/add-layer-to-a-qgis-group-using-python
 
 try:
     from six import iteritems
@@ -11,9 +14,9 @@ except ImportError:
 
 sys.path.append( os.path.join(os.environ["HOME"],"python") )
 
-from qgis.core import ( QgsGeometry, QgsPoint, QgsFeature,QgsVectorLayer, QgsField,
-                        QgsMapLayerRegistry, 
-                        QgsMarkerSymbolV2, QgsLineSymbolV2, QgsFillSymbolV2 )
+from qgis.core import ( QgsGeometry, QgsPointXY, QgsFeature,QgsVectorLayer, QgsField,
+                        QgsMarkerSymbol, QgsLineSymbol, QgsFillSymbol, QgsProject,
+                        QgsLayerTreeLayer )
 from qgis.PyQt.QtCore import QVariant
 
 import logging
@@ -181,6 +184,8 @@ class UmbraSubLayer(object):
         self.qlayer=self.create_qlayer(existing=qlayer)
 
         self.populate_qlayer()
+        # connect signals to see if attributes are modified
+        self.connect_qlayer()
 
     # This is a somewhat extreme version --
     def freeze(self):
@@ -196,6 +201,48 @@ class UmbraSubLayer(object):
     def create_qlayer(self,existing=None):
         return None
 
+    def connect_qlayer(self):
+        self.qlayer.beforeCommitChanges.connect(self.on_beforeCommitChanges)
+
+    edits_to_commit=None
+    
+    def on_beforeCommitChanges(self):
+        """
+        Ideally these would get copied, and then when the 
+        edits were known to be successfully committed these
+        changes would get mirrored to the grid. However, the
+        commit process isn't that simple, and since it 
+        is going to a memory layer the likelihood of the commit
+        failing is minimal.
+        """
+        log.info("beforeCommitChanges: applying edit buffer")
+        eb=self.qlayer.editBuffer()
+        
+        for field in eb.addedAttributes():
+            # QgsField object
+            name=field.name()
+            if field.typeName()=='double':
+                np_type=np.float64
+            elif field.typeName()=='integer':
+                np_type=np.int32
+            else:
+                np_type=object
+            self.add_field(field, field.name(), np_type)
+
+        # { feat_id: {attr_id: new_value, ... }, ... }
+        changes=eb.changedAttributeValues()
+
+        for feat_id in changes:
+            for attr_id in changes[feat_id]:
+                new_val=changes[feat_id][attr_id]
+                self.update_values(feat_id,attr_id,new_val)
+            
+    def add_field(self,name,np_type):
+        log.warning("add_field not implemented for %s"%str(self))
+
+    def update_values(self,feat_id,attr_id,value):
+        log.warning("update_values not implemented for %s"%str(self))
+        
     def extend_grid(self):
         """
         install callbacks or additional fields as
@@ -298,12 +345,12 @@ class UmbraNodeLayer(UmbraSubLayer):
 
         if not existing:
             # nice clean black dot
-            symbol = QgsMarkerSymbolV2.createSimple({'outline_style':'no',
-                                                     'name': 'circle',
-                                                     'size_unit':'MM',
-                                                     'size':'1',
-                                                     'color': 'black'})
-            qlayer.rendererV2().setSymbol(symbol)
+            symbol = QgsMarkerSymbol.createSimple({'outline_style':'no',
+                                                   'name': 'circle',
+                                                   'size_unit':'MM',
+                                                   'size':'1',
+                                                   'color': 'black'})
+            qlayer.renderer().setSymbol(symbol)
         return qlayer
 
     def populate_qlayer(self,clear=True):
@@ -369,7 +416,7 @@ class UmbraNodeLayer(UmbraSubLayer):
         feat = QgsFeature() # can't set feature_ids
         self.set_feature_attributes(n,feat)
         feat.setGeometry(geom)
-        self.log.info("Just added a node - %s"%geom.exportToWkt())
+        self.log.info("Just added a node - %s"%geom.asWkt())
         self.log.info("in the grid, node %d has x=%s"%(n,self.grid.nodes['x'][n]))
 
         (res, outFeats) = self.qlayer.dataProvider().addFeatures([feat])
@@ -380,6 +427,7 @@ class UmbraNodeLayer(UmbraSubLayer):
         self.log.info("on_add_node: requested repaint from qlayer=%s"%self.qlayer)
 
     def on_delete_node(self,g,func_name,n,**k):
+        self.log.info("on_delete_node")
         self.qlayer.dataProvider().deleteFeatures([self.grid.nodes['feat_id'][n]])
         self.qlayer.triggerRepaint()
 
@@ -391,8 +439,8 @@ class UmbraNodeLayer(UmbraSubLayer):
             update_node_degree(self.grid,k['nodes'],with_callback=True)
 
     def node_geometry(self,n):
-        return QgsGeometry.fromPoint(QgsPoint(self.grid.nodes['x'][n,0],
-                                              self.grid.nodes['x'][n,1]))
+        return QgsGeometry.fromPointXY(QgsPointXY(self.grid.nodes['x'][n,0],
+                                                  self.grid.nodes['x'][n,1]))
 
     def selection(self):
         # these are feature ids...
@@ -424,7 +472,7 @@ class UmbraEdgeLayer(UmbraSubLayer):
 
         pr = qlayer.dataProvider()
 
-        e_attrs=[QgsField("edge_id",QVariant.Int)]
+        my_attrs=[QgsField("edge_id",QVariant.Int)]
         casters=[int]
 
         for fidx,fdesc in enumerate(self.grid.edge_dtype.descr):
@@ -440,32 +488,32 @@ class UmbraEdgeLayer(UmbraSubLayer):
                 continue
 
             if fname=='cells':
-                e_attrs += [QgsField("c0", QVariant.Int),
+                my_attrs += [QgsField("c0", QVariant.Int),
                             QgsField("c1", QVariant.Int)]
                 casters += [int,int]
             else:
                 if np.issubdtype(ftype,np.int):
-                    e_attrs.append( QgsField(fname,QVariant.Int) )
+                    my_attrs.append( QgsField(fname,QVariant.Int) )
                     casters.append(int)
                 elif np.issubdtype(ftype,np.float):
-                    e_attrs.append( QgsField(fname,QVariant.Double) )
+                    my_attrs.append( QgsField(fname,QVariant.Double) )
                     casters.append(float)
                 else:
                     self.log.info("Not ready for other datatypes (%s: %s)"%(fname,str(ftype)))
 
-        self.e_attrs=e_attrs
+        self.my_attrs=my_attrs
         self.casters=casters
 
-        pr.addAttributes(e_attrs)
+        pr.addAttributes(my_attrs)
         qlayer.updateFields() # tell the vector layer to fetch changes from the provider
 
         if not existing:
             # clean, thin black style
-            symbol = QgsLineSymbolV2.createSimple({'line_style':'solid',
-                                                   'line_width':'0.2',
-                                                   'line_width_unit':'MM',
-                                                   'line_color': 'black'})
-            qlayer.rendererV2().setSymbol(symbol)
+            symbol = QgsLineSymbol.createSimple({'line_style':'solid',
+                                                 'line_width':'0.2',
+                                                 'line_width_unit':'MM',
+                                                 'line_color': 'black'})
+            qlayer.renderer().setSymbol(symbol)
         return qlayer
 
     def populate_qlayer(self):
@@ -488,8 +536,8 @@ class UmbraEdgeLayer(UmbraSubLayer):
         self.grid.edges['feat_id'][valid]=[f.id() for f in outFeats]
 
     def set_feature_attributes(self,j,feat):
-        feat.initAttributes(len(self.e_attrs))
-        for idx,eattr in enumerate(self.e_attrs):
+        feat.initAttributes(len(self.my_attrs))
+        for idx,eattr in enumerate(self.my_attrs):
             name=eattr.name()
             typecode=eattr.type()
             caster=self.casters[idx]
@@ -509,6 +557,20 @@ class UmbraEdgeLayer(UmbraSubLayer):
             #     feat.setAttribute(idx,float(self.grid.edges[name][j]))
             # else:
             #     continue
+            
+    def add_field(self,field,name,np_type):
+        self.grid.add_edge_field(name,np.zeros(self.grid.Nedges(),np_type))
+        self.my_attrs.append(field)
+
+    def update_values(self,feat_id,attr_id,value):
+        """
+        Copy QGIS changes in attribute values to the grid
+        """
+        grid_name=self.my_attrs[attr_id].name()
+        js=self.grid.edges['feat_id']==feat_id # SLOW! (maybe)
+        self.grid.edges[grid_name][js]=value
+        
+        log.info("update_values on edges")
 
     def extend_grid(self):
         g=self.grid
@@ -544,7 +606,7 @@ class UmbraEdgeLayer(UmbraSubLayer):
 
         self.grid.edges['feat_id'][j] = outFeats[0].id()
         self.qlayer.triggerRepaint()
-        self.log.info("Just added an edge - %s"%geom.exportToWkt())
+        self.log.info("Just added an edge - %s"%geom.asWkt())
 
     def on_delete_edge(self,g,func_name,j,**k):
         self.qlayer.dataProvider().deleteFeatures([self.grid.edges['feat_id'][j]])
@@ -568,7 +630,7 @@ class UmbraEdgeLayer(UmbraSubLayer):
         fid=g.edges['feat_id'][j]
         attr_changes={fid:{}}
 
-        for idx,attr in enumerate(self.e_attrs):
+        for idx,attr in enumerate(self.my_attrs):
             name=attr.name()
             if name in k:
                 attr_changes[fid][idx]=self.casters[idx](k[name])
@@ -585,11 +647,32 @@ class UmbraEdgeLayer(UmbraSubLayer):
         if np.any(np.isnan(seg)):
             self.log.warning("Edge geometry for j=%d, nodes=%s, has coords %s"%
                              (j,self.grid.edges['nodes'][j],str(seg)))
-        pnts=[QgsPoint(seg[0,0],seg[0,1]),
-              QgsPoint(seg[1,0],seg[1,1])]
-        return QgsGeometry.fromPolyline(pnts)
+        pnts=[QgsPointXY(seg[0,0],seg[0,1]),
+              QgsPointXY(seg[1,0],seg[1,1])]
+        return QgsGeometry.fromPolylineXY(pnts)
 
+    def selection(self):
+        feat_ids=[feat.id()
+                  for feat in self.qlayer.selectedFeatures()]
+        feat_ids=set(feat_ids)
 
+        selected=[]
+        for n in range(self.grid.Nedges()):
+            if self.grid.edges['feat_id'][n] in feat_ids:
+                selected.append(n)
+        return selected
+        
+    def set_selection(self,js):
+        """
+        Update QGIS edge selection.  
+        js: sequence of edge indexes
+        """
+        # qgis api doesn't know ndarray
+        feat_ids=list(self.grid.edges['feat_id'][js])
+        ql=self.qlayer
+        ql.modifySelection(feat_ids, # to select
+                           ql.selectedFeatureIds()) # to deselect
+                           
 class UmbraCellLayer(UmbraSubLayer):
     # the name of the field added to the grid to track the features here
     feat_id_name='feat_id'
@@ -601,7 +684,7 @@ class UmbraCellLayer(UmbraSubLayer):
         else:
             qlayer=QgsVectorLayer("Polygon"+self.crs,self.prefix+"-cells","memory")
 
-        c_attrs=[QgsField("cell_id",QVariant.Int)]
+        my_attrs=[QgsField("cell_id",QVariant.Int)]
         casters=[int]
 
         for fidx,fdesc in enumerate(self.grid.cell_dtype.descr):
@@ -619,28 +702,28 @@ class UmbraCellLayer(UmbraSubLayer):
                 self.log.info("Trying to add field for %s"%fname)
 
                 if np.issubdtype(ftype,np.int):
-                    c_attrs.append( QgsField(fname,QVariant.Int) )
+                    my_attrs.append( QgsField(fname,QVariant.Int) )
                     casters.append(int)
                 elif np.issubdtype(ftype,np.float):
-                    c_attrs.append( QgsField(fname,QVariant.Double) )
+                    my_attrs.append( QgsField(fname,QVariant.Double) )
                     casters.append(float)
                 else:
                     self.log.info("Not ready for other datatypes (%s: %s)"%(fname,str(ftype)))
 
-        self.c_attrs=c_attrs
+        self.my_attrs=my_attrs
         self.casters=casters
 
         pr = qlayer.dataProvider()
-        pr.addAttributes(c_attrs)
+        pr.addAttributes(my_attrs)
         qlayer.updateFields() # tell the vector layer to fetch changes from the provider
 
         if not existing:
             # transparent red, no border
             # but this is the wrong class...
-            symbol = QgsFillSymbolV2.createSimple({'outline_style':'no',
-                                                   'style':'solid',
-                                                   'color': '249,0,0,78'})
-            qlayer.rendererV2().setSymbol(symbol)
+            symbol = QgsFillSymbol.createSimple({'outline_style':'no',
+                                                 'style':'solid',
+                                                 'color': '249,0,0,78'})
+            qlayer.renderer().setSymbol(symbol)
         return qlayer
 
     def extend_grid(self):
@@ -700,7 +783,7 @@ class UmbraCellLayer(UmbraSubLayer):
         fid=g.cells['feat_id'][c]
         attr_changes={fid:{}}
 
-        for idx,attr in enumerate(self.c_attrs):
+        for idx,attr in enumerate(self.my_attrs):
             name=attr.name()
             if name in k:
                 attr_changes[fid][idx]=self.casters[idx](k[name])
@@ -728,10 +811,10 @@ class UmbraCellLayer(UmbraSubLayer):
         self.qlayer.triggerRepaint()
 
     def cell_geometry(self,i):
-        pnts=[QgsPoint(self.grid.nodes['x'][n,0],
-                       self.grid.nodes['x'][n,1])
+        pnts=[QgsPointXY(self.grid.nodes['x'][n,0],
+                         self.grid.nodes['x'][n,1])
               for n in self.grid.cell_to_nodes(i)]
-        return QgsGeometry.fromPolygon([pnts])
+        return QgsGeometry.fromPolygonXY([pnts])
 
     def populate_qlayer(self):
         layer=self.qlayer
@@ -753,8 +836,8 @@ class UmbraCellLayer(UmbraSubLayer):
         self.grid.cells[self.feat_id_name][valid]=[f.id() for f in outFeats]
 
     def set_feature_attributes(self,i,feat):
-        feat.initAttributes(len(self.c_attrs))
-        for idx,cattr in enumerate(self.c_attrs):
+        feat.initAttributes(len(self.my_attrs))
+        for idx,cattr in enumerate(self.my_attrs):
             name=cattr.name()
             typecode=cattr.type()
             if name=='cell_id':
@@ -795,27 +878,24 @@ class UmbraCellCenterLayer(UmbraCellLayer):
             qlayer=QgsVectorLayer("Point"+self.crs,self.prefix+"-centers","memory")
 
         # for now, cell centers don't carry all of the fields like cell polygons do.
-        self.c_attrs=[]
+        self.my_attrs=[]
         self.casters=[]
 
         if not existing:
-            symbol = QgsMarkerSymbolV2.createSimple({'outline_style':'no',
-                                                     'name': 'circle', 
-                                                     'size_unit':'MM',
-                                                     'size':'1',
-                                                     'color': 'green'})
-            qlayer.rendererV2().setSymbol(symbol)
+            symbol = QgsMarkerSymbol.createSimple({'outline_style':'no',
+                                                   'name': 'circle', 
+                                                   'size_unit':'MM',
+                                                   'size':'1',
+                                                   'color': 'green'})
+            qlayer.renderer().setSymbol(symbol)
         return qlayer
 
     # extend, unextend, on_delete_cell: use inherited method of UmbraCellLayer
     # populate_qlayer(self), selection() also same as cell Layer
 
     def cell_geometry(self,i):
-        pnts=[QgsPoint(self.grid.nodes['x'][n,0],
-                       self.grid.nodes['x'][n,1])
-              for n in self.grid.cell_to_nodes(i)]
         cc=self.grid.cells_center()
-        return QgsGeometry.fromPoint( QgsPoint(cc[i,0],cc[i,1]) )
+        return QgsGeometry.fromPointXY( QgsPointXY(cc[i,0],cc[i,1]) )
 
 
 class UmbraLayer(object):
@@ -981,10 +1061,15 @@ class UmbraLayer(object):
         return grid
 
     def on_layer_deleted(self,sublayer):
-        self.layers.remove(sublayer)
+        if sublayer in self.layers:
+            # on shutdown, sublayer may not be in self.layers (?)
+            self.layers.remove(sublayer)
         self.log.info("signal received: layer deleted")
         self.log.info("that leaves %d more sublayers for this grid"%len(self.layers))
-        sublayer.unextend_grid()
+        try:
+            sublayer.unextend_grid()
+        except AttributeError:
+            self.log.error("on_layer_deleted got called with a weird object: %s"%sublayer)
 
         # not sure what the proper behavior should be when all of our layers 
         # have been removed.  The layer groups are unfortunately not very
@@ -997,8 +1082,7 @@ class UmbraLayer(object):
         # these are the steps which led to this callback.  don't do them
         # again.
 
-        # reg=QgsMapLayerRegistry.instance()
-        # reg.removeMapLayers([sublayer.qlayer])
+        # QgsProject.instance().removeMapLayers([sublayer.qlayer])
 
     def unload_layer(self):
         """ Remove this layer.  Should only be called once the qgis layers
@@ -1020,14 +1104,25 @@ class UmbraLayer(object):
         the layer registry group.
         """
         self.layers.append( sublayer )
-        def callback(sublayer=sublayer):
+
+        self.log.info("registering destroyed callback with sublayer=%s"%sublayer)
+
+        def callback(*args,sublayer=sublayer):
+            self.log.info("delete on sublayer=%s"%sublayer)
             self.on_layer_deleted(sublayer)
-        sublayer.qlayer.layerDeleted.connect(callback)
+        # this might not be the right thing -- this may only be getting called
+        # when the object is destructored, but I want to know when it is removed
+        # from the project.
+        sublayer.qlayer.destroyed.connect(callback)
 
         if not preexisting:
-            QgsMapLayerRegistry.instance().addMapLayer(sublayer.qlayer)
-            li=self.iface.legendInterface()
-            li.moveLayer(sublayer.qlayer,self.group_index)
+            project=QgsProject.instance()
+            # is layer==sublayer.qlayer?  dunno.
+            new_layer=project.addMapLayer( sublayer.qlayer, addToLegend=False)
+            node_layer=QgsLayerTreeLayer(new_layer)
+            
+            group=self.group() # assumes already created
+            group.addChildNode(node_layer)
 
     def layer_by_tag(self,tag):
         for layer in self.layers:
@@ -1039,34 +1134,44 @@ class UmbraLayer(object):
         return None
 
     def create_group(self,use_existing=False):
-        grp_name=self.name
-        log.info("UmbraLayer:create_group, grp_name=%s use_existing=%s"%(grp_name,use_existing))
-        li=self.iface.legendInterface()
+        log.info("UmbraLayer:create_group, grp_name=%s use_existing=%s"%(self.group_name,use_existing))
+
+        # The logic below is weak -- will need to decide whether to use a
+        # different group name when use_existing is False and the group already
+        # exists, or to just use the existing group.  
+        root=QgsProject.instance().layerTreeRoot()
 
         if use_existing:
-            # need to find the index of the group named grp_name
-            try:
-                self.group_index=li.groups().index(grp_name)
-            except ValueError:
-                self.log.warning("Failed to find group '%s', will create it"%grp_name)
+            group=root.findGroup(self.group_name)
+            if group is None:
+                self.log.warning("Failed to find group '%s', will create it"%self.group_name)
                 use_existing=False
 
         if not use_existing:
-            # Create a group for the layers -
-            self.group_index=li.addGroup(grp_name)
-            self.log.info("Created group '%s', index is %s and %s"%
-                          (grp_name,self.group_index,li.groups().index(grp_name)))
+            group=root.findGroup(self.group_name)
+            if group is not None:
+                self.log.warning("use_existing is false, but %s yields %s"%(self.group_name,group))
+            else:
+                # Create a group for the layers -
+                group=root.addGroup(self.group_name)
+                self.log.info("Created group '%s', value is %s"%
+                              (self.group_name,group))
 
+        assert root.findGroup(self.group_name) is not None
+        
     def remove_group(self):
-        grp_name=self.name
-        li=self.iface.legendInterface()
-
-        for idx,group_name in enumerate(li.groups()):
-            if group_name==grp_name:
-                li.removeGroup(idx)
-                break
+        root=QgsProject.instance().layerTreeRoot()
+        grp=root.findGroup(self.group_name)
+        if grp is not None:
+            root.removeChildNode(grp)
         else:
-            self.log.warning("Group '%s' not found to remove"%grp_name)
+            self.log.warning("Group '%s' not found to remove"%self.group_name)
+    @property
+    def group_name(self):
+        return self.name
+    def group(self):
+        return QgsProject.instance().layerTreeRoot().findGroup(self.group_name)
+    
 
     # tags are used to map between names and the sublayer 
     # class implementation:
@@ -1087,40 +1192,29 @@ class UmbraLayer(object):
 
         self.log.info("register_layers(), use_existing=%s"%use_existing)
         
+        group=self.group()
+        # project=QgsProject.instance()
+            
         if use_existing:
             # Try to scan the group to find which layers to instantiate
             # but if no layers are there, fall through and create
             # default set of layers.  alternatively, could trigger
             # our own removal, since there shouldn't be situations
             # where the group exists but has no layers
-            li=self.umbra.iface.legendInterface()
-            mlr=QgsMapLayerRegistry.instance()
+            group_layers=group.children()
 
-            group_name=None
-            group_layers=[]
-            for name,layers in li.groupLayerRelationship():
-                if name==self.name:
-                   group_name=name
-                   group_layers=layers
-                   break
-            if group_name is None:
-                use_existing=False
-
-        if use_existing: # assumes group_layers was set above
             # Still, allow a fall through if no layers can be found
             use_existing=False
-            for layer_uuid in group_layers:
-                # these are unicode uniquified layer names.
-                qlayer=mlr.mapLayers()[layer_uuid]
+            for qlayer in group_layers:
                 # should be <umbra_layer.name>-<tag>
-                self.log.warning("Checking on layer %s"%qlayer.name())
+                self.log.info("Checking on layer %s"%qlayer.name())
                 try:
                     grid_name,tag = qlayer.name().split('-')
                 except ValueError:
-                    raise Exception("Found layer name '%s' in umbra.  group_index is %s, group_name '%s'"%
-                                    (qlayer.name(),group_index,group_name) )
+                    self.log.error("Found misnamed layer name '%s' in umbra."%
+                                   (qlayer.name()) )
+                    continue
 
-                # assert self.name==grid_name
                 if tag not in self.tag_map:
                     self.log.error("Tag %s does not map to known grid layer class"%tag)
                     continue
@@ -1163,11 +1257,15 @@ class UmbraLayer(object):
         """
         layers=[]
         for sublayer in self.layers:
-            layers.append( sublayer.qlayer.name() )
-        reg=QgsMapLayerRegistry.instance()
-        self.log.info("Found %d layers to remove"%len(layers))
-
-        reg.removeMapLayers(layers)
+            try:
+                layers.append( sublayer.qlayer.name() )
+            except RuntimeError:
+                # There is an issue with the destroyed callback, where it doesn't receive the
+                # right layer, so it can't remove it from self.layers, and then at the
+                # bitter end we try to remove it but it's already gone/deleted.
+                self.log.error("qlayer was still in self.layers, but it was already deleted")
+            self.log.info("Found %d layers to remove"%len(layers))
+        project=QgsProject.instance().removeMapLayers(layers)
 
     def distance_to_node(self,pnt,i):
         """ compute distance from the given point to the given node, returned in
@@ -1225,29 +1323,43 @@ class UmbraLayer(object):
         If no nodes are selected, choose the nearest cell and adjust all
         of its nodes.
         """
+        self.log.info("orthogonalize_local: xy=%s,  iterations=%s"%(xy,iterations))
+        
         tweaker=orthogonalize.Tweaker(self.grid)
         
         nl=self.layer_by_tag('nodes')
         if nl is not None:
             nl_sel=nl.selection()
             if len(nl_sel)>0:
+                self.log.info("orthogonalize_local: node_selection=%s,  iterations=%s"%(nl_sel))
                 for it in range(iterations):
+                    self.log.info("orthogonalize_local: node_iteration %s"%it)
                     for n in nl_sel:
                         tweaker.nudge_node_orthogonal(n)
                 return
         
         c=self.grid.select_cells_nearest(xy)
+        if c is None:
+            # this is maybe from stale indices?
+            self.log.warning("orthogonalize_local: cell came up None")
+            return 
 
         for it in range(iterations):
+            self.log.info("orthogonalize_local: cell_iteration %s, c=%s"%(it,c))
             tweaker.nudge_cell_orthogonal(c)
     
     def toggle_cell_at_point(self,xy):
-        def do_toggle():
-            self.log.info("umbra_layer: toggle cell at %s"%xy)
+        # this might be safer in capturing xy, and
+        # helps with logging.
+        self.log.info("umbra_layer: toggle cell at %s"%xy)
+        
+        def do_toggle(xy=xy):
+            self.log.info("umbra_layer: do_toggle cell at %s"%xy)
             self.grid.toggle_cell_at_point(xy)
         cmd=GridCommand(self.grid,
                         "Toggle cell",
-                        lambda: self.grid.toggle_cell_at_point(xy))
+                        do_toggle)
+        # self.grid.toggle_cell_at_point(xy))
         self.undo_stack.push(cmd)
         
     def delete_node(self,n):
@@ -1303,10 +1415,40 @@ class UmbraLayer(object):
         self.undo_stack.push(cmd)
 
     def split_edge(self,e,merge_thresh=-1):
+        def do_split_edge(e=e):
+            j_new,n_new,js_next=self.grid.split_edge(e,merge_thresh=merge_thresh)
+            # update the edge selection to be the next obvious edge
+            if len(js_next):
+                self.log.info("Will update edge selection with next edges to split")
+                el=self.layer_by_tag('edges')
+                if el is not None:
+                    el.set_selection(js_next)
+            
         cmd=GridCommand(self.grid,
                         "Split edge",
-                        lambda e=e: self.grid.split_edge(e,merge_thresh=merge_thresh))
+                        do_split_edge)
         self.undo_stack.push(cmd)
+        
+    def add_quad_from_edge(self,e):
+        def do_extend_edge(e=e):
+            try:
+                res=self.grid.add_quad_from_edge(e)
+            except self.grid.GridException as exc:
+                self.log.warning("Could not extend edge %d"%e)
+                return
+            
+            # update the edge selection to be the next obvious edge
+            if 'j_next' in res:
+                self.log.info("Will update edge selection with next edges to extend")
+                el=self.layer_by_tag('edges')
+                if el is not None:
+                    el.set_selection([res['j_next']])
+            
+        cmd=GridCommand(self.grid,
+                        "Extend quad from edge",
+                        do_extend_edge)
+        self.undo_stack.push(cmd)
+        
     def merge_cells(self,e):
         cmd=GridCommand(self.grid,
                         "Merge cells",

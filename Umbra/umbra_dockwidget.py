@@ -25,14 +25,13 @@ import os
 import logging
 log=logging.getLogger('umbra')
 
-from qgis.PyQt import QtGui, uic
+from qgis.PyQt import QtGui, uic, QtWidgets
 from qgis.PyQt.QtCore import pyqtSignal
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'umbra_dockwidget_base.ui'))
 
-
-class UmbraDockWidget(QtGui.QDockWidget, FORM_CLASS):
+class UmbraDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
 
     # closingDockWidget = pyqtSignal()
 

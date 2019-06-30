@@ -27,8 +27,6 @@ import os
 from qgis.PyQt import QtGui, uic
 from qgis.PyQt.QtCore import pyqtSignal #, QMetaObject
 
-from qgis.core import QgsPluginLayerRegistry,QgsMapLayerRegistry
-
 FORM_CLASS, base_class = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'umbra_newlayer_base.ui'))
 

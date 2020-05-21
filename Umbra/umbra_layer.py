@@ -111,9 +111,8 @@ def update_edge_quality(g,edges=None,with_callback=True):
     # so now edges is guaranteed to be an array of indices
     # print("edges dtype is ",edges.dtype)
 
-    # these could become performance bottle necks
+    # these could become performance bottle necks.
     vc=g.cells_center()
-    ec=g.edges_center()
 
     # this had been recalculating for all edges
     g.edge_to_cells(e=edges)
@@ -123,6 +122,11 @@ def update_edge_quality(g,edges=None,with_callback=True):
     c2c=np.zeros( len(external), np.float64)
 
     int_edges=edges[~external]
+
+    # ec_int=g.edges_center(int_edges) # YES
+    # use direct approach, where we can skip some sanity checks that are in
+    # unstructured_grid.edges_center()
+    ec_int = g.nodes['x'][g.edges['nodes'][int_edges,:]].mean(axis=1)
 
     # this did not before have the int_edges bit, but that
     # I think was a problem because d is coming in just for int_edges,
@@ -134,8 +138,8 @@ def update_edge_quality(g,edges=None,with_callback=True):
         diffs=vc[g.edges['cells'][int_edges,1]] - vc[g.edges['cells'][int_edges,0]]
         c2c[~external]=dist_signed(diffs)
     else:
-        diff_left =vc[g.edges['cells'][int_edges,1]] - ec[int_edges]
-        diff_right=ec[int_edges] - vc[g.edges['cells'][int_edges,0]]
+        diff_left =vc[g.edges['cells'][int_edges,1]] - ec_int
+        diff_right=ec_int - vc[g.edges['cells'][int_edges,0]]
         # Factor of 2 so that overall range is similar to double-sided test
         c2cl=2*dist_signed(diff_left)
         c2cr=2*dist_signed(diff_right)
@@ -561,6 +565,13 @@ class UmbraEdgeLayer(UmbraSubLayer):
     def add_field(self,field,name,np_type):
         self.grid.add_edge_field(name,np.zeros(self.grid.Nedges(),np_type))
         self.my_attrs.append(field)
+        
+        if np_type==np.float64:
+            self.casters.append(float)
+        elif np_type==np.int32:
+            self.casters.append(int)
+        else:
+            self.casters.append(lambda x:x)
 
     def update_values(self,feat_id,attr_id,value):
         """
@@ -1205,7 +1216,10 @@ class UmbraLayer(object):
 
             # Still, allow a fall through if no layers can be found
             use_existing=False
-            for qlayer in group_layers:
+            for layer_tree_layer in group_layers:
+                # Need to get qlayer from the layer_tree_layer
+                qlayer=layer_tree_layer.layer()
+                
                 # should be <umbra_layer.name>-<tag>
                 self.log.info("Checking on layer %s"%qlayer.name())
                 try:
@@ -1226,7 +1240,7 @@ class UmbraLayer(object):
                 use_existing=True # got at least one layer, so prevent fall-through
 
         if not use_existing:
-            for tag in ['cells','edges','nodes']:
+            for tag in ['nodes','edges','cells']:
                 self.add_layer_by_tag(tag)
 
     def add_layer_by_tag(self,tag):
@@ -1331,7 +1345,7 @@ class UmbraLayer(object):
         if nl is not None:
             nl_sel=nl.selection()
             if len(nl_sel)>0:
-                self.log.info("orthogonalize_local: node_selection=%s,  iterations=%s"%(nl_sel))
+                self.log.info("orthogonalize_local: node_selection=%s,  iterations=%s"%(nl_sel,iterations))
                 for it in range(iterations):
                     self.log.info("orthogonalize_local: node_iteration %s"%it)
                     for n in nl_sel:
@@ -1415,24 +1429,48 @@ class UmbraLayer(object):
         self.undo_stack.push(cmd)
 
     def split_edge(self,e,merge_thresh=-1):
-        def do_split_edge(e=e):
-            j_new,n_new,js_next=self.grid.split_edge(e,merge_thresh=merge_thresh)
-            # update the edge selection to be the next obvious edge
-            if len(js_next):
-                self.log.info("Will update edge selection with next edges to split")
+        """
+        e: list of edge indices
+        merge_thresh: threshold for merging tri=>quad after split
+        """
+        def do_split_edges(e=e):
+            all_js_next=[]
+            for j in e:
+                j_new,n_new,js_next=self.grid.split_edge(j,merge_thresh=merge_thresh)
+                # update the edge selection to be the next obvious edge
+                all_js_next += list(js_next)
+                
+            if len(all_js_next):
+                self.log.debug("Will update edge selection with next edges to split")
                 el=self.layer_by_tag('edges')
                 if el is not None:
-                    el.set_selection(js_next)
+                    el.set_selection(all_js_next)
             
         cmd=GridCommand(self.grid,
                         "Split edge",
-                        do_split_edge)
+                        do_split_edges)
+        self.undo_stack.push(cmd)
+
+    def triangulate_hole(self,seed):
+        # make sure it's legal:
+        c=self.grid.select_cells_nearest(seed,inside=True)
+        if c is not None:
+            self.iface.messageBar().pushMessage("Error", "Point is inside an existing cell", level=Qgis.Warning,
+                                                duration=3)
+            
+        def do_triangulate_hole(seed=seed):
+            from stompy.grid import triangulate_hole
+            gnew=triangulate_hole.triangulate_hole(self.grid,seed)
+            
+        cmd=GridCommand(self.grid,
+                        "Triangulate hole",
+                        do_triangulate_hole)
         self.undo_stack.push(cmd)
         
-    def add_quad_from_edge(self,e):
+    def add_quad_from_edge(self,e,orthogonal='edge'):
         def do_extend_edge(e=e):
             try:
-                res=self.grid.add_quad_from_edge(e)
+                res=self.grid.add_quad_from_edge(e,orthogonal=orthogonal)
             except self.grid.GridException as exc:
                 self.log.warning("Could not extend edge %d"%e)
                 return
@@ -1449,10 +1487,78 @@ class UmbraLayer(object):
                         do_extend_edge)
         self.undo_stack.push(cmd)
         
-    def merge_cells(self,e):
+    def merge_cells(self,e,chain=True):
+        # allow chaining merge operations
+        # e: list of edges to merge
+
+        def do_merges(e=e,self=self,chain=chain):
+            g=self.grid
+            j_next=[]
+
+            for j in e:
+                jn=g.edges['nodes'][j].copy()
+
+                c=g.merge_cells(j=j)
+                if not chain: return
+
+                # Check the two nodes:
+                for n in jn:
+                    ncs=g.node_to_cells(n)
+                    nc_sides=[g.cell_Nsides(nc) for nc in ncs if nc!=c]
+
+                    if nc_sides==[4,4]:
+                        j=g.cells_to_edge(c,ncs[0])
+                        assert j is not None
+                        he=g.halfedge(j,0)
+                        if he.cell()!=c: he=he.opposite()
+                        # now c is on our left
+                        if he.node_rev()!=n: he=he.fwd()
+                        assert he.cell()==c
+                        assert he.node_rev()==n
+                        # delete the edge between the two quads
+                        he_opp=he.opposite()
+                        g.delete_edge_cascade(he_opp.fwd().j)
+                        trav=he_opp
+                        A=trav.node_rev() ; trav=trav.rev()
+                        B=trav.node_rev() ; trav=trav.rev()
+                        jC1=trav.opposite().fwd().j
+                        C=trav.node_rev() ; trav=trav.rev()
+                        jC2=trav.opposite().rev().j
+                        D=trav.node_rev() ; trav=trav.rev()
+                        E=trav.node_rev() ; trav=trav.rev()
+
+                        g.add_edge(nodes=[A,C])
+                        g.add_cell( nodes=[A,C,B] )
+                        g.add_edge(nodes=[C,E])
+                        g.add_cell( nodes=[C,E,D] )
+                        g.merge_edges(node=n)
+                        g.add_cell( nodes=[A,E,C] )
+                        # and find a potential edge to merge next
+                        if jC1==jC2:
+                            j_next.append(jC1)
+                    elif nc_sides==[3,3,3]:
+                        seed=g.cells_center()[ncs[0]]
+                        for jnbr in list(g.node_to_edges(n)):
+                            print("Checking j=%d e2c %s against %d"%(jnbr,g.edge_to_cells(jnbr),c))
+                            if c not in g.edge_to_cells(jnbr):
+                                # This is finding a cell that is already deleted?
+                                g.delete_edge_cascade(jnbr) 
+                        n_nbrs=g.node_to_nodes(n)
+                        assert len(n_nbrs)==2,"n_nbrs should be two, but it's %s"%( str(n_nbrs) ) # fails HERE
+                        g.merge_edges(node=n)
+                        g.add_cell_at_point(seed)
+                    else:
+                        pass
+
+                if j_next:
+                    self.log.info("Will update edge selection with next edges to merge")
+                    el=self.layer_by_tag('edges')
+                    if el is not None:
+                        el.set_selection(j_next)
+        
         cmd=GridCommand(self.grid,
                         "Merge cells",
-                        lambda e=e: self.grid.merge_cells(e))
+                        do_merges)
         self.undo_stack.push(cmd)
     
     def delete_selected(self):

@@ -472,3 +472,16 @@ Migrate to QGIS3:
       deleteAttributeIds (?).
       then also connect to commit, where those changes then get published
       to the grid.
+
+
+One thing slowing down orthogonalize is cells_centroid().
+For a short optimize, total was 0.30s and cells_centroid() was 0.176.
+I think this is coming from updating the cell center index.
+ - that should be fixed now.
+ - initial test shows the 0.30 has come down to 0.125
+ - bulk of the remaining time is in update_edge_quality.
+ - and most of that is edges_center().
+ - fixed that too.
+ WAY better.
+ 
+

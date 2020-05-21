@@ -343,21 +343,21 @@ class UmbraEditorTool(QgsMapTool):
         gl=self.gridlayer()
         if gl is None:
             return
-        items=self.event_to_item(event,types=['edge'])
-        if items['edge'] is not None:
+        items=self.event_to_item(event,types=['edge'],multiple=True)
+        if len(items['edge']) > 0:
             merge_thresh=self.umbra.dockwidget.automerge_thresh.value()
             gl.split_edge(e=items['edge'],merge_thresh=merge_thresh)
             self.clear_op() # safety first
         else:
             self.log.info("no feature hits")
 
-    def add_quad_from_edge(self,event):
+    def add_quad_from_edge(self,event,orthogonal='edge'):
         gl=self.gridlayer()
         if gl is None:
             return
         items=self.event_to_item(event,types=['edge'])
         if items['edge'] is not None:
-            gl.add_quad_from_edge(e=items['edge'])
+            gl.add_quad_from_edge(e=items['edge'],orthogonal=orthogonal)
             self.clear_op() # safety first
         else:
             self.log.info("no feature hits")
@@ -366,13 +366,20 @@ class UmbraEditorTool(QgsMapTool):
         gl=self.gridlayer()
         if gl is None:
             return
-        items=self.event_to_item(event,types=['edge'])
-        if items['edge'] is not None:
+        items=self.event_to_item(event,types=['edge'],multiple=True)
+        if len(items['edge']) > 0:
             gl.merge_cells(e=items['edge'])
-            self.clear_op() # safety first
+            self.clear_op() 
         else:
             self.log.info("no feature hits")
 
+    def triangulate_hole(self,event):
+        gl=self.gridlayer()
+        if gl is None:
+            return
+        map_xy,pix_xy=self.event_to_map_xy(event)
+        gl.triangulate_hole(seed=map_xy)
+            
     def optimize_local(self,event):
         gl=self.gridlayer()
         if gl is None:
@@ -532,10 +539,16 @@ class UmbraEditorTool(QgsMapTool):
             self.merge_nodes_of_edge(event)
         elif txt in ['s','S']: # in qgis 3, s is for snap.
             self.split_edge(event)
-        elif txt in ['q']: 
-            self.add_quad_from_edge(event)
+        elif txt in ['Q']:
+            # this one forces the new quad to be orthogonal
+            self.add_quad_from_edge(event,orthogonal='cell')
+        elif txt in ['q']:
+            # this call makes the new edges locally perpendicular to the existing edge
+            self.add_quad_from_edge(event,orthogonal='edge')
         elif txt == 'j':
             self.merge_cells(event)
+        elif txt == 't':
+            self.triangulate_hole(event)
         elif key == Qt.Key_Delete or key == Qt.Key_Backspace:
             # A little shaky here, but I think the idea is that
             # we accept it if we handle it, which is good b/c

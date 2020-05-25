@@ -390,27 +390,24 @@ class UmbraEditorTool(QgsMapTool):
 
         n_iters=self.umbra.dockwidget.orthogNIters.value()
 
-        if 1:
-            # serial approach
-            self.log.info("Starting optimize")
-            gl.orthogonalize_local(map_xy,iterations=n_iters)
-            self.log.info("Finish optimize")
-        else:
-            # threaded!?  this crashes
-            thunk=( lambda gl=gl,map_xy=map_xy,n_iters=n_iters:
-                    gl.orthogonalize_local(map_xy,iterations=n_iters) )
-            self.log.info("Creating SlowOpDialog")
-            slow_dlg=SlowOpDialog(parent=self.iface.mainWindow(),
-                                  iface=self.iface,
-                                  umbra=self.umbra)
-            # I don't think we ever actually exec the dialog.  it's
-            # not really needed..
-            # slow_dlg.exec_()
-            self.log.info("exec_ on SlowOpDialog")
-            
-            slow_dlg.startWorker(thunk)
+        # serial approach. parallel attempt crashed
+        self.log.info("Starting optimize")
+        gl.orthogonalize_local(map_xy,iterations=n_iters)
+        self.log.info("Finish optimize")
 
-            self.log.info("Called startWorker")
+    def smooth_local(self,event):
+        gl=self.gridlayer()
+        if gl is None:
+            return
+
+        self.log.info("Trying a local optimize")
+        map_xy,_=self.event_to_map_xy(event)
+
+        # serial approach. parallel attempt crashed
+        self.log.info("Starting smooth")
+        gl.smooth_local(map_xy)
+        self.log.info("Finish smooth")
+        
             
     def toggle_cell(self,event):
         gl=self.gridlayer()
@@ -535,6 +532,8 @@ class UmbraEditorTool(QgsMapTool):
             self.redo()
         elif txt=='r':
             self.optimize_local(event)
+        elif txt=='R':
+            self.smooth_local(event)
         elif txt == 'm':
             self.merge_nodes_of_edge(event)
         elif txt in ['s','S']: # in qgis 3, s is for snap.

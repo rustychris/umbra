@@ -22,7 +22,7 @@ from qgis.PyQt.QtCore import QVariant
 import logging
 log=logging.getLogger('umbra.layer')
 
-from stompy.grid import unstructured_grid, orthogonalize
+from stompy.grid import unstructured_grid, orthogonalize, smooth_quads
 from stompy.utils import mag
 from stompy.model.delft import dfm_grid
 
@@ -1361,7 +1361,17 @@ class UmbraLayer(object):
         for it in range(iterations):
             self.log.info("orthogonalize_local: cell_iteration %s, c=%s"%(it,c))
             tweaker.nudge_cell_orthogonal(c)
-    
+
+    def smooth_local(self,xy,max_cells=50,max_radius=None,halo=[2,5],max_weight=0.3):
+        # May extend later to apply to a contiguous quad subset of the selection
+        def do_smooth(xy=xy,max_cells=max_cells,max_radius=max_radius,halo=halo,max_weight=max_weight):
+            smooth_quads.conformal_smooth(self.grid,ctr=xy,max_cells=max_cells,max_radius=max_radius,halo=halo,
+                                          max_weight=max_weight)
+        cmd=GridCommand(self.grid,
+                        "Smooth local",
+                        do_smooth)
+        self.undo_stack.push(cmd)
+            
     def toggle_cell_at_point(self,xy):
         # this might be safer in capturing xy, and
         # helps with logging.
@@ -1486,7 +1496,7 @@ class UmbraLayer(object):
                         "Extend quad from edge",
                         do_extend_edge)
         self.undo_stack.push(cmd)
-        
+
     def merge_cells(self,e,chain=True):
         # allow chaining merge operations
         # e: list of edges to merge

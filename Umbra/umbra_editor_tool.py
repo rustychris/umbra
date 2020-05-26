@@ -395,19 +395,21 @@ class UmbraEditorTool(QgsMapTool):
         gl.orthogonalize_local(map_xy,iterations=n_iters)
         self.log.info("Finish optimize")
 
-    def smooth_local(self,event):
+    def smooth_local_quads(self,event):
         gl=self.gridlayer()
         if gl is None:
             return
 
-        self.log.info("Trying a local optimize")
-        map_xy,_=self.event_to_map_xy(event)
+        self.log.info("Trying a local smooth")
+        items=self.event_to_item(event,types=['node'],multiple=True)
 
-        # serial approach. parallel attempt crashed
-        self.log.info("Starting smooth")
-        gl.smooth_local(map_xy)
-        self.log.info("Finish smooth")
-        
+        if len(items['node'])>0:
+            self.log.info("Starting smooth")
+            gl.smooth_local(node_idxs=items['node'])
+            self.log.info("Finish smooth")
+            self.clear_op()
+        else:
+            self.log.info("No node hits")
             
     def toggle_cell(self,event):
         gl=self.gridlayer()
@@ -533,7 +535,7 @@ class UmbraEditorTool(QgsMapTool):
         elif txt=='r':
             self.optimize_local(event)
         elif txt=='R':
-            self.smooth_local(event)
+            self.smooth_local_quads(event)
         elif txt == 'm':
             self.merge_nodes_of_edge(event)
         elif txt in ['s','S']: # in qgis 3, s is for snap.

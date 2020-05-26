@@ -1362,11 +1362,13 @@ class UmbraLayer(object):
             self.log.info("orthogonalize_local: cell_iteration %s, c=%s"%(it,c))
             tweaker.nudge_cell_orthogonal(c)
 
-    def smooth_local(self,xy,max_cells=50,max_radius=None,halo=[2,5],max_weight=0.3):
+    def smooth_local(self,node_idxs,min_halo=2,n_iter=1,stencil_radius=1):
         # May extend later to apply to a contiguous quad subset of the selection
-        def do_smooth(xy=xy,max_cells=max_cells,max_radius=max_radius,halo=halo,max_weight=max_weight):
-            smooth_quads.conformal_smooth(self.grid,ctr=xy,max_cells=max_cells,max_radius=max_radius,halo=halo,
-                                          max_weight=max_weight)
+        def do_smooth(node_idxs=node_idxs,min_halo=min_halo,grid=self.grid,n_iter=n_iter,
+                      stencil_radius=stencil_radius):
+            tweaker=orthogonalize.Tweaker(grid)
+            tweaker.local_smooth(node_idxs=node_idxs,min_halo=min_halo,n_iter=n_iter,
+                                 stencil_radius=stencil_radius)
         cmd=GridCommand(self.grid,
                         "Smooth local",
                         do_smooth)

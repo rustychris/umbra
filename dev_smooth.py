@@ -1,7 +1,8 @@
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 import numpy as np
-from stompy.grid import unstructured_grid
+from stompy import utils
+from stompy.grid import unstructured_grid, orthogonalize
 import six
 from scipy.optimize import fmin
 from stompy import filters
@@ -129,42 +130,56 @@ def conformal_smooth(g,ctr,max_cells=250,max_radius=None,halo=[0,5]):
 g2=g.copy()
 g2.nodes=g2.nodes.copy()
 
-## 
-zoom=(647272.002689184, 647366.8838680824, 4185758.0535712815, 4185844.980679361)
+#zoom=(647272.002689184, 647366.8838680824, 4185758.0535712815, 4185844.980679361)
 #zoom=(647338.5356397176, 647353.926604037, 4185825.9776436556, 4185835.2842944413)
+zoom=(647322.602775441, 647386.6122419959, 4185801.6372121023, 4185840.3426330113)
 plt.figure(2).clf()
 fig,axs=plt.subplots(2,1,num=2,sharex=True,sharey=True)
 axs[0].axis(zoom)
 
-while 1:
-    axs[0].collections=[]
-    g.plot_edges(lw=0.5,color='k',ax=axs[0])
-    axs[1].collections=[]
-    g2.plot_edges(lw=0.5,color='k',ax=axs[1])
-    
-    plt.draw()
-    fig.tight_layout()
+# Select a rectangular chunk, so there is some hope of
+# reaching orthogonality
+# The results inside QGIS were way worse than here.
+node_idxs,ij=g2.select_quad_subset([647312.798537119, 4185793.464304051],
+                                   max_cells=2000,max_radius=65)
+node_idxs,ij=g2.select_quad_subset([647106.6898191961, 4185847.1708695497],
+                                   max_cells=1000,max_radius=45)
+                                   
+subsel=( ij[:,1]<3 ) & ( ij[:,1]>-8)
 
-    ctr=plt.ginput(1)
-    if not ctr:
-        break
-    ctr=np.array(ctr[0])
+# The actual call from QGIS would be more like this:
+node_idxs,ij=g2.select_quad_subset(ctr=None,node_set=node_idxs[subsel])
 
-    # This could be reused for multiple specific nodes
-    node_idxs,ij=g2.select_quad_subset(ctr,max_cells=100)
-    halos=calc_halo(g2,node_idxs)
-    
+g.plot_edges(ax=axs[0],color='k',lw=0.5)
+g.plot_nodes(ax=axs[0],color='b',mask=node_idxs)
+## 
+# This works reasonably well when the region is "nice"
+# 
+
+def local_smooth(g,node_idxs,ij,n_iter=3,stencil_radius=1):
+    tweaker=orthogonalize.Tweaker(g)
+    # halos=calc_halo(g,node_idxs)
+    halos=tweaker.calc_halo(node_idxs)
+
     pad=2
-    ij-=ij.min(axis=0) - pad
+    ij=ij-ij.min(axis=0) + pad
     XY=np.nan*np.zeros( (pad+1+ij[:,0].max(),
                          pad+1+ij[:,1].max(),
                          2), np.float64)
-    XY[ij[:,0],ij[:,1]]=g2.nodes['x'][node_idxs]
+    XY[ij[:,0],ij[:,1]]=g.nodes['x'][node_idxs]
 
-    # Grab a specific node
-    # n=g2.select_nodes_nearest(ctr)
-    # or iterate through sufficiently internal nodes
-    n_iter=3
+    stencil_rows=[]
+    for i in range(-stencil_radius,stencil_radius+1):
+        for j in range(-stencil_radius,stencil_radius+1):
+            stencil_rows.append([i,j])
+    stencil=np.array(stencil_rows)
+
+    # And fit a surface to the X and Y components
+    #  Want to fit an equation
+    #   x= a*i + b*j + c
+    M=np.c_[stencil,np.ones(len(stencil))]
+
+    moved_nodes={}
     for count in range(n_iter):
         for ni,n in enumerate(node_idxs):
             if halos[ni]<2: continue
@@ -177,31 +192,96 @@ while 1:
             # Query XY to estimate where n "should" be.
             i,j=ij[ni]
 
-            
-            dXY_di = np.diff(XY,axis=0)
-            dXY_dj = np.diff(XY,axis=1)
+            XY_sten=(XY[stencil[:,0]+ij[ni,0],stencil[:,1]+ij[ni,1]]
+                     -XY[i,j])
+            valid=np.isfinite(XY_sten[:,0])
 
-            # Local means
-            d_di=np.nanmean( [ dXY_di[i,j], dXY_di[i-1,j]],axis=0)
-            d_dj=np.nanmean( [ dXY_dj[i,j], dXY_dj[i,j-1]],axis=0)
+            xcoefs,resid,rank,sing=np.linalg.lstsq(M[valid],XY_sten[valid,0],rcond=None)
+            ycoefs,resid,rank,sing=np.linalg.lstsq(M[valid],XY_sten[valid,1],rcond=None)
 
-            delta_i = np.nanmean(  [d_di - dXY_di[i-1,j],
-                                    dXY_di[i,j] - d_di],axis=0)
-            delta_j = np.nanmean( [d_dj - dXY_dj[i,j-1],
-                                   dXY_dj[i,j] - d_dj ],axis=0)
+            delta=np.array( [xcoefs[2],
+                             ycoefs[2]])
 
-            delta= 0.9*np.nanmean( [delta_i,delta_j],axis=0)
             new_x=XY[i,j] + delta
             if np.isfinite(new_x[0]):
-                if count+1==n_iter:
-                    g2.modify_node(n,x=new_x)
                 XY[i,j]=new_x
                 print(f"moved {n} by {delta}")
+                moved_nodes[n]=True
+                if np.any( np.abs(delta)>2.0 ):
+                    import pdb
+                    pdb.set_trace()
             else:
                 print("Hit nans.")
+    n_bad=4360
+    if n_bad not in node_idxs:
+        print("n_bad=%d wasn't found"%n_bad)
+        
+    # Update grid
+    count=0
+    for ni,n in enumerate(node_idxs):
+        if n not in moved_nodes: continue
+        i,j=ij[ni]
+        dist=utils.mag(XY[i,j] - g.nodes['x'][n])
+        if n==n_bad:
+            print("n=%d had delta of %f"%(n,dist))
+        
+        if dist>1e-6:
+            g.modify_node(n,x=XY[i,j])
+            count+=1
+    print("%d nodes got moved"%count)
+    
+    for n in list(moved_nodes.keys()):
+        for nbr in g.node_to_nodes(n):
+            if nbr not in moved_nodes:
+                moved_nodes[nbr]=True
+    for n in moved_nodes.keys():
+        tweaker.nudge_node_orthogonal(n)
+
+if 0:
+    local_smooth(g2,node_idxs,ij,stencil_radius=1,n_iter=1)
+else:
+    six.moves.reload_module(orthogonalize)
+    tweaker=orthogonalize.Tweaker(g2)
+    tweaker.local_smooth(node_idxs,n_iter=1)
+    
+axs[0].collections=[]
+g.plot_edges(lw=0.5,color='k',ax=axs[0])
+axs[1].collections=[]
+g2.plot_edges(lw=0.5,color='k',ax=axs[1])
+    
+plt.draw()
+fig.tight_layout()
+
+##
+halos=tweaker.calc_halo(node_idxs)
+g2.plot_nodes(masked_values=halos,mask=node_idxs)
 
 ##
 
+tweaker=orthogonalize.Tweaker(g2)
+tweaker.nudge_node_orthogonal(14288)
+axs[1].collections=[]
+g2.plot_edges(lw=0.5,color='k',ax=axs[1])
+
+
+
+## 
+    ctr=plt.ginput(1)
+    # ctr=[(647346.1404786101, 4185830.0374231054)]
+    if not ctr:
+        break
+    ctr=np.array(ctr[0])
+
+    # This could be reused for multiple specific nodes
+    node_idxs,ij=g2.select_quad_subset(ctr,max_cells=100)
+
+        
+axs[1].collections=[]
+g2.plot_edges(lw=0.5,color='k',ax=axs[1])
+plt.draw()
+fig.tight_layout()
+
+##
 local_j=np.unique( [j for n in node_idxs for j in g.node_to_edges(n)] )
 real_local_j=[j for j in local_j
               if ( (g.edges['nodes'][j,0] in node_idxs)

@@ -1,18 +1,4 @@
-with backrefs, max_depth=5, see more of the picture.
-
-vector layer is referenced in locals, fine, but mostly
-the dict behind UgQgis.
-That dict also references, via self.tool, the UgEditTool.
-UgEditTool in turn references UgQgis, so there's a cycle there,
-not great.
-
-On top of that, QgsMapCanvas holds a reference to the tool.
-And that is probably bad - because MapCanvas will continue to
-call any callbacks.
-
-Adding cell-center plotting - done, but needs UI integration
-
-Renumbering?
-  - it's in there, but untested.
-  - 
-
+There is a sneaky bug where seemingly random cells get deleted.
+  - maybe related to undo?
+  - infrequent, happens to cells not necessarily near the edit
+    area

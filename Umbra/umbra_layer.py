@@ -22,7 +22,7 @@ from qgis.PyQt.QtCore import QVariant
 import logging
 log=logging.getLogger('umbra.layer')
 
-from stompy.grid import unstructured_grid, orthogonalize, smooth_quads
+from stompy.grid import unstructured_grid, orthogonalize
 from stompy.utils import mag
 from stompy.model.delft import dfm_grid
 

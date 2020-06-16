@@ -2,3 +2,6 @@ There is a sneaky bug where seemingly random cells get deleted.
   - maybe related to undo?
   - infrequent, happens to cells not necessarily near the edit
     area
+
+When a layer fails to load, it seems to break the loading of Umbra
+itself.

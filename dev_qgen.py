@@ -195,7 +195,6 @@ def add_bezier(gen):
 add_bezier(gen)        
 ## 
 
-# HERE:
 # the bezier boundary looks decent.
 #  - I think I can use this directly to clip and set BCs
 #    for the diffusion problem.
@@ -240,7 +239,7 @@ fig,ax=plt.subplots(num=1)
 #gen.plot_edges(lw=0.5,color='b',ax=ax,alpha=0.2)
 gen_up.plot_edges(lw=0.5,color='b',ax=ax,alpha=0.5)
 gen_up.plot_nodes()
-gen_up.plot_cells(color='0.7') 
+#gen_up.plot_cells(color='0.7') 
 
 paths=[]
 
@@ -254,6 +253,60 @@ ax.axis('equal')
 g=gen_up
 ##
 
+# Like gen_up, but modifying g
+for j in gen.valid_edge_iter():
+    n0=gen.edges['nodes'][j,0]
+    nN=gen.edges['nodes'][j,1]
+    bez=gen.edges['bez'][j]
+    dij=gen.edges['dij'][j]
+    steps=int(utils.mag(dij))
+    t=np.linspace(0,1,1+steps)
+
+    B0=(1-t)**3
+    B1=3*(1-t)**2 * t
+    B2=3*(1-t)*t**2
+    B3=t**3
+    
+    points = B0[:,None]*bez[0] + B1[:,None]*bez[1] + B2[:,None]*bez[2] + B3[:,None]*bez[3]
+    dij_up=dij/steps
+
+    for i in range(1,len(points)-1):
+        ij0=gen.nodes['ij'][n0]
+        ijN=gen.nodes['ij'][nN]
+        ij_i=ij0+i*dij_up
+        
+        # j_new,n_new,next_split = gen_up.split_edge(j_split,x=points[i],split_cells=False)
+        n=np.nonzero( np.all( g.nodes['ij']==ij_i, axis=1))[0][0]
+        g.modify_node(n,x=points[i])
+
+def smooth_interior_quads(g):
+    # redistribute interior nodes evenly
+    # by solving laplacian
+    M=sparse.dok_matrix( (g.Nnodes(),g.Nnodes()), np.float64)
+    rhs_nodes=-1*np.ones(g.Nnodes(),np.int32)
+    for n in g.valid_node_iter():
+        if g.is_boundary_node(n):
+            M[n,n]=1
+            rhs_nodes[n]=n
+        else:
+            nbrs=g.node_to_nodes(n)
+            M[n,n]=-len(nbrs)
+            for nbr in nbrs:
+                M[n,nbr]=1
+    rhs_x=np.where( rhs_nodes<0, 0, g.nodes['x'][rhs_nodes,0])
+    new_x=sparse.linalg.spsolve(M.tocsr(),rhs_x)
+    rhs_y=np.where( rhs_nodes<0, 0, g.nodes['x'][rhs_nodes,1])
+    new_y=sparse.linalg.spsolve(M.tocsr(),rhs_y)
+
+    g.nodes['x'][:,0]=new_x
+    g.nodes['x'][:,1]=new_y
+
+smooth_interior_quads(g)    
+plt.figure(3).clf()
+g.plot_edges()
+plt.axis('equal')
+
+##
 # What would it look like to solve a pair of laplacians
 # on the grid to get a psi/phi coordinate system?
 # And does that help?
@@ -442,75 +495,245 @@ valid=np.isfinite(u.F + v.F)
 valid[::2]=False
 valid[:,::2]=False
 
-#plt.quiver( X[valid], Y[valid], u.F[valid], v.F[valid],scale=2)
 
-#cc=gr.cells_center()
-#plt.quiver( cc[:,0], cc[:,1], u2,v2,color='b', scale=2)
-# gr.plot_cells(values=phi,cmap=turbo)
+##
 
+# Regroup:
+#  The flow-net approach seems good
+#  - it does not support self-joins that are not themselves conformal,
+#    that would have to be done patch by patch.
+#  - likewise, no support at this point for holes in the polygon, would
+#    have to split up into patches
+#  - the solution method is slow.
 
+# Two thoughts on improving solution method:
+#  - construct the rough quad grid as I'm already doing, solve
+#    the laplace eqns on that grid with a finite-difference approach
+#    that makes no assumptions on cell geometry.  Probably solve on
+#    nodes and edges so we have a full field
+#  - still solve on regular cartesian grid, but directly via numpy,
+#    not through unstructured.
 
+# What would the math look like to do this finite difference on the
+# unstructued grid?
+
+# Does it help to construct the dual?
+# Normal dual construction assumes starting grid is orthogonal.
+ggd=g.create_dual(create_cells=False)
 
 
 ##
-# try the conformal approaches.
-import dev_smooth
-six.moves.reload_module(dev_smooth)
 
-rigid=g.nodes['rigid']==RIGID
 
-nodes=np.array(list(g.valid_node_iter()))
+from scipy.spatial import Voronoi,voronoi_plot_2d
 
-# local fits were not great
+## 
+vor=Voronoi(g.nodes['x'])
+#voronoi_plot_2d(vor,ax=ax)
 
-if 1: # global fit just to rigid nodes
-    node_idxs=nodes
-    fixed=rigid & (g.nodes['x'][:,1]>100)
-    #fixed=rigid & (g.nodes['x'][:,0]<110)
-    #fixed=rigid
-    free_nodes=nodes[ ~fixed ]
-    fit_nodes= nodes[  fixed ] 
+# Consider vertices outside the original grid to all be infinite,
 
-    dev_smooth.conformal_smooth(g,node_idxs=node_idxs,
-                                free_nodes=free_nodes,
-                                fit_nodes=fit_nodes,
-                                ij=g.nodes['ij'][node_idxs],
-                                halo=[0,2],
-                                max_update=1.0)
+from shapely import geometry
+boundary=g.boundary_polygon()
+
+fin_vertices=np.array([boundary.contains(geometry.Point(v[0],v[1]))
+                       for v in vor.vertices])
+max_sides=max([len(c) for c in vor_cells])
+# mark empty with -2 to distinguish from infinite==-1
+cells=-2*np.ones( (len(vor.regions),max_sides), np.int32)
+for ci,c in enumerate(vor_cells):
+    cells[ci,:len(c)]=c
+
+cells=np.where( (cells>=0) & (~fin_vertices[cells.clip(0)]),
+                -1, cells)
+valid=np.all(cells!=-1,axis=1) & (cells.max(axis=1)>=0)
+cells=cells[valid]
+
+##     
+ggd=unstructured_grid.UnstructuredGrid(max_sides=max_sides,
+                                       points=vor.vertices,
+                                       cells=cells.clip(-1))
+ggd.make_edges_from_cells()
 
 plt.figure(1).clf()
-gen.plot_edges(lw=1.5,color='b')
-g.plot_edges(lw=0.5,color='k')
-plt.axis('equal')
+fig,ax=plt.subplots(num=1)
+g.plot_edges(lw=0.5,color='k',ax=ax)
+g.plot_nodes(labeler='id')
+ax.axis('equal')
 
+#ggd.plot_edges()
+#ggd.plot_cells(alpha=0.4)
+
+# HERE
+#  Do I know how to set the BCs properly?
+#  the laplacian is easy enough with the orthogonal
+#  grid.
+##
+
+# try this old  paper:
+# https://ntrs.nasa.gov/archive/nasa/casi.ntrs.nasa.gov/19890000871.pdf
+
+# select a sample node
+# this operates on the nodes of g
+# for starters use the existing edges, but in general will calculate
+# a proper tinagulation
+
+#n0=189
+#is_boundary=0
+
+from scipy import sparse
+class NodeDiscretization(object):
+    def __init__(self,g):
+        self.g=g
+        # self.dirichlet_nodes={}
+    def construct_matrix(self,op='laplacian',dirichlet_nodes={}):
+        B=np.zeros(g.Nnodes(),np.float64)
+        M=sparse.dok_matrix( (g.Nnodes(),g.Nnodes()),np.float64)
+
+        for n in range(g.Nnodes()):
+            if n in dirichlet_nodes:
+                nodes=[n]
+                alphas=[1]
+                rhs=dirichlet_nodes[n]
+            else:
+                nodes,alphas,rhs=self.node_discretization(n,op=op)
+                # could add to rhs here
+            B[n]=rhs
+            for node,alpha in zip(nodes,alphas):
+                M[n,node]=alpha
+        return M,B
+    def node_laplacian(self,n0):
+        return self.node_discretization(n0,'laplacian')
+
+    def node_dx(self,n0):
+        return self.node_discretization(n0,'dx')
+    
+    def node_discretization(self,n0,op='laplacian'):
+        def beta(c):
+            return 1.0
+        
+        N=self.g.angle_sort_adjacent_nodes(n0)
+        P=len(N)
+        is_boundary=int(self.g.is_boundary_node(n0))
+        M=len(N) - is_boundary
+
+        if is_boundary:
+            # roll N to start and end on boundary nodes:
+            nbr_boundary=[self.g.is_boundary_node(n)
+                          for n in N]
+            while not (nbr_boundary[0] and nbr_boundary[-1]):
+                N=np.roll(N,1)
+                nbr_boundary=np.roll(nbr_boundary,1)
+        
+        # area of the triangles
+        A=[] 
+        for m in range(M):
+            tri=[n0,N[m],N[(m+1)%P]]
+            Am=utils.signed_area( self.g.nodes['x'][tri] )
+            A.append(Am)
+        AT=np.sum(A)
+
+        alphas=[]
+        x=self.g.nodes['x'][N,0]
+        y=self.g.nodes['x'][N,1]
+        x0,y0=self.g.nodes['x'][n0]
+        
+        for n in range(P):
+            n_m_e=(n-1)%M
+            n_m=(n-1)%P
+            n_p=(n+1)%P
+            a=0
+            if op=='laplacian':
+                if n>0 or P==M: # nm<M
+                    a+=-beta(n_m_e)/(4*A[n_m_e]) * ( (y[n_m]-y[n])*(y0-y[n_m]) + (x[n] -x[n_m])*(x[n_m]-x0))
+                if n<M:
+                    a+= -beta(n)/(4*A[n])  * ( (y[n]-y[n_p])*(y[n_p]-y0) + (x[n_p]-x[n ])*(x0 - x[n_p]))
+            elif op=='dx':
+                if n>0 or P==M: # nm<M
+                    a+= beta(n_m_e)/(2*AT) * (y0-y[n_m])
+                if n<M:
+                    a+= beta(n)/(2*AT) * (y[n_p]-y0)
+            elif op=='dy':
+                if n>0 or P==M: # nm<M
+                    a+= beta(n_m_e)/(2*AT) * (x[n_m]-x0)
+                if n<M:
+                    a+= beta(n)/(2*AT) * (x0 - x[n_p])
+            else:
+                raise Exception('bad op')
+                
+            alphas.append(a)
+
+        alpha0=0
+        for e in range(M):
+            ep=(e+1)%P
+            if op=='laplacian':
+                alpha0+= - beta(e)/(4*A[e]) * ( (y[e]-y[ep])**2 + (x[ep]-x[e])**2 )
+            elif op=='dx':
+                alpha0+= beta(e)/(2*AT)*(y[e]-y[ep])
+            elif op=='dy':
+                alpha0+= beta(e)/(2*AT)*(x[ep]-x[e])
+            else:
+                raise Exception('bad op')
+                
+        if op=='laplacian' and P>M:
+            norm_grad=0 # no flux bc
+            L01=np.sqrt( (x[0]-x0)**2 + (y0-y[0])**2 )
+            L0P=np.sqrt( (x[0]-x[-1])**2 + (y0-y[-1])**2 )
+
+            gamma=3/AT * ( beta(0) * norm_grad * L01/2
+                           + beta(P-1) * norm_grad * L0P/2 )
+        else:
+            gamma=0
+        assert np.isfinite(alpha0)
+        return ([n0]+list(N),
+                [alpha0]+list(alphas),
+                -gamma)
+
+nd=NodeDiscretization(g)
+
+e2c=g.edge_to_cells()
+
+boundary=e2c.min(axis=1)<0
+dirichlet_nodes={}
+for e in np.nonzero(boundary)[0]:
+    n1,n2=g.edges['nodes'][e]
+    i1=g.nodes['ij'][n1,0]
+    i2=g.nodes['ij'][n2,0]
+    if i1==i2:
+        dirichlet_nodes[n1]=i1
+        dirichlet_nodes[n2]=i2
+
+M,B=nd.construct_matrix(op='laplacian',dirichlet_nodes=dirichlet_nodes)
+
+psi=sparse.linalg.spsolve(M.tocsr(),B)
+
+## 
+
+
+Mdx,Bdx=nd.construct_matrix(op='dx')
+Mdy,Bdy=nd.construct_matrix(op='dy')
+
+dpsi_dx=Mdx.dot(psi)
+dpsi_dy=Mdy.dot(psi)
+
+u=dpsi_dy
+v=-dpsi_dx
+# solve Mdx*phi = u
+#       Mdy*phi = v
+Mdxdy=sparse.vstack( (Mdx,Mdy) )
+Buv=np.concatenate( (u,v))
+
+phi,*rest=sparse.linalg.lsqr(Mdxdy,Buv)
 
 ##
-opt_vec=np.zeros( (len(free_nodes),2), np.float64)
-free_nodes=np.nonzero( g.nodes['rigid']==FREE )[0]
-tweaker=orthogonalize.Tweaker(g)
+
+plt.figure(2).clf()
+g.plot_boundary(color='k',lw=0.5)
+g.contour_node_values(psi,20,linewidths=1.5,colors='orange')
+g.contour_node_values(phi,20,linewidths=1.5,colors='blue')
 
 ##
-for i in range(1):
-    x0=g.nodes['x'][free_nodes].copy()
-    for ni,n in enumerate(free_nodes):
-        g.modify_node(n,x=g.nodes['x'][n]+0.5*opt_vec[ni])
 
-    tweaker.local_smooth(node_idxs=nodes,
-                         free_nodes=free_nodes,
-                         ij=g.nodes['ij'][nodes],
-                         stencil_radius=2,
-                         n_iter=2,
-                         min_halo=0)
-
-    for _ in range(5):
-        for ni,n in enumerate(free_nodes):
-            tweaker.nudge_node_orthogonal(n)
-
-    opt_vec[:]=g.nodes['x'][free_nodes] - x0
-
-plt.figure(1).clf()
-gen.plot_edges(lw=1.5,color='b')
-g.plot_edges(lw=0.5,color='k')
-plt.axis('equal')
-
-print("Max delta: ",utils.mag(opt_vec).max())
+# NEXT:
+#   solve the above with proper triangulation
+#   

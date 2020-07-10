@@ -245,7 +245,19 @@ class UmbraSubLayer(object):
         log.warning("add_field not implemented for %s"%str(self))
 
     def update_values(self,feat_id,attr_id,value):
+        """
+        TODO: currently if there are multiple layers for the same feature
+        type, an attribute edit on one layer won't be seen in the other.
+        Maybe should just have a single editable feature?  for example,
+        you can't edit cell fields on a CellCenterLayer?
+        """
         log.warning("update_values not implemented for %s"%str(self))
+
+    def update_values_generic(self,target,feat_id,attr_id,value):
+        grid_name=self.my_attrs[attr_id].name()
+        items=target['feat_id']==feat_id # SLOW! (maybe)
+        target[grid_name][items]=value
+        log.info("update_values generic")
         
     def extend_grid(self):
         """
@@ -390,6 +402,12 @@ class UmbraNodeLayer(UmbraSubLayer):
             else:
                 feat.setAttribute(idx,caster(item[name]))
 
+    def update_values(self,feat_id,attr_id,value):
+        """
+        Copy QGIS changes in attribute values to the grid
+        """
+        self.update_values_generic(self.grid.nodes,feat_id,attr_id,value)
+                
     def on_modify_node(self,g,func_name,n,**k):
         fid=self.grid.nodes[n]['feat_id']
         changed=False
@@ -577,11 +595,7 @@ class UmbraEdgeLayer(UmbraSubLayer):
         """
         Copy QGIS changes in attribute values to the grid
         """
-        grid_name=self.my_attrs[attr_id].name()
-        js=self.grid.edges['feat_id']==feat_id # SLOW! (maybe)
-        self.grid.edges[grid_name][js]=value
-        
-        log.info("update_values on edges")
+        self.update_values_generic(self.grid.edges,feat_id,attr_id,value)
 
     def extend_grid(self):
         g=self.grid
@@ -864,6 +878,12 @@ class UmbraCellLayer(UmbraSubLayer):
             #     continue
             # QGIS doesn't know about numpy types
 
+    def update_values(self,feat_id,attr_id,value):
+        """
+        Copy QGIS changes in attribute values to the grid
+        """
+        self.update_values_generic(self.grid.cells,feat_id,attr_id,value)
+            
     def selection(self):
         # these are feature ids...
         cell_feat_ids=[feat.id()

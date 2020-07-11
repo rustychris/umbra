@@ -940,6 +940,7 @@ qg.plot_psi_phi()
 qg.adjust_intermediate_by_psi_phi()
 
 qg.plot_result()
+plt.figure(6).clf()
 g_int_preadjust.plot_edges(color='green')
 
 # As much as the preadjust grid looks pretty nice, the post-adjust grid

@@ -159,7 +159,16 @@ def update_edge_quality(g,edges=None,with_callback=True):
     else:
         g.edges['edge_quality'][edges]=c2c
 
+
+def float_or_null(v):
+    if np.isnan(v):
+        return None
+    else:
+        return float(v)
+    
 class UmbraSubLayer(object):
+    int_nan=-9999 # how to convert NULL into an int.
+    
     def __init__(self,parent,prefix,tag=None,qlayer=None):
         """
         qlayer: not robust. for the case where a layer
@@ -241,9 +250,27 @@ class UmbraSubLayer(object):
                 new_val=changes[feat_id][attr_id]
                 self.update_values(feat_id,attr_id,new_val)
             
-    def add_field(self,name,np_type):
+    def add_field(self,field,name,np_type):
         log.warning("add_field not implemented for %s"%str(self))
 
+    def add_field_generic(self,field,name,np_type,adder,n_items):
+        """
+        Common code for sublcass add_field methods.
+        field,name,np_type: same as passed to add_field
+        adder: self.grid.add_{node,cell,edge}_field
+        n_items: self.grid.{Nnodes,Ncells,Nedges}()
+        """
+        values=np.zeros(n_items,np_type)
+        adder(name,values)
+        self.attrs.append(field)
+        
+        if np_type==np.float64:
+            self.casters.append(float_or_null)
+        elif np_type==np.int32:
+            self.casters.append(int)
+        else:
+            self.casters.append(lambda x:x)
+        
     def update_values(self,feat_id,attr_id,value):
         """
         TODO: currently if there are multiple layers for the same feature
@@ -254,11 +281,42 @@ class UmbraSubLayer(object):
         log.warning("update_values not implemented for %s"%str(self))
 
     def update_values_generic(self,target,feat_id,attr_id,value):
-        grid_name=self.my_attrs[attr_id].name()
-        items=target['feat_id']==feat_id # SLOW! (maybe)
-        target[grid_name][items]=value
+        """
+        Handle a GUI update to an attribute value. update_values() is
+        defined on sublcasses, to specify the details which are then
+        utilized here in a more generic process.
+
+        target: the numpy array (e.g. grid.cells) to update
+        feat_id: the QGIS feature id being updated.  this will get mapped
+         to an unstructured_grid id.
+
+        """
+        grid_name=self.attrs[attr_id].name()
+        items=np.nonzero( target['feat_id']==feat_id )[0] # SLOW! (maybe)
+        assert len(items)==1,"Pretty sure it should always be 1."
+        # Casters are intended for the other way around, but used here
+        # to guide some special checks.
+        caster=self.casters[attr_id]
+
+        # Losing track a bit -- seems that 
+        # value is coming in as float, None, or QVariant
+        if (value is None) or (isinstance(value,QVariant) and value.isNull()):
+            if (caster==float) or (caster==float_or_null):
+                np_value=np.nan
+            elif caster==int:
+                np_value=self.int_nan
+            else:
+                log.warning("Not sure how to handle NULL field and caster=%s"%caster)
+                np_value=value
+        else:
+            # Hmm - value might be a QVariant?  Or not.
+            # Not sure what's up. when in doubt, sit on hands.
+            # np_value=self.casters[attr_id]( value )
+            np_value=value
+            
+        target[grid_name][items]=np_value
         log.info("update_values generic")
-        
+
     def extend_grid(self):
         """
         install callbacks or additional fields as
@@ -330,6 +388,8 @@ class UmbraNodeLayer(UmbraSubLayer):
             qlayer= QgsVectorLayer("Point"+self.crs, self.prefix+"-nodes", "memory")
 
         attrs=[QgsField("node_id",QVariant.Int)]
+
+        # The primary point of casters is to get from numpy types to plain python types.
         casters=[int]
 
         for fidx,fdesc in enumerate(self.grid.node_dtype.descr):
@@ -349,7 +409,7 @@ class UmbraNodeLayer(UmbraSubLayer):
                 casters.append(int)
             elif np.issubdtype(ftype,np.floating):
                 attrs.append( QgsField(fname,QVariant.Double) )
-                casters.append(float)
+                casters.append(float_or_null)
             else:
                 self.log.info("Not ready for other datatypes (%s: %s)"%(fname,str(ftype)))
         self.attrs=attrs
@@ -380,8 +440,8 @@ class UmbraNodeLayer(UmbraSubLayer):
         valid=[]
         #for n in range(self.grid.Nnodes()): # why was I using this???
         for n in self.grid.valid_node_iter():
-            valid.append(n)
             geom = self.node_geometry(n)
+            valid.append(n)
             feat = QgsFeature() # can't set feature_ids
             self.set_feature_attributes(n,feat)
             feat.setGeometry(geom)
@@ -407,6 +467,11 @@ class UmbraNodeLayer(UmbraSubLayer):
         Copy QGIS changes in attribute values to the grid
         """
         self.update_values_generic(self.grid.nodes,feat_id,attr_id,value)
+
+    def add_field(self,field,name,np_type):
+        self.add_field_generic(field,name,np_type,
+                               self.grid.add_node_field,self.grid.Nnodes())
+        
                 
     def on_modify_node(self,g,func_name,n,**k):
         fid=self.grid.nodes[n]['feat_id']
@@ -494,7 +559,7 @@ class UmbraEdgeLayer(UmbraSubLayer):
 
         pr = qlayer.dataProvider()
 
-        my_attrs=[QgsField("edge_id",QVariant.Int)]
+        attrs=[QgsField("edge_id",QVariant.Int)]
         casters=[int]
 
         for fidx,fdesc in enumerate(self.grid.edge_dtype.descr):
@@ -510,23 +575,23 @@ class UmbraEdgeLayer(UmbraSubLayer):
                 continue
 
             if fname=='cells':
-                my_attrs += [QgsField("c0", QVariant.Int),
+                attrs += [QgsField("c0", QVariant.Int),
                             QgsField("c1", QVariant.Int)]
                 casters += [int,int]
             else:
                 if np.issubdtype(ftype,np.int):
-                    my_attrs.append( QgsField(fname,QVariant.Int) )
+                    attrs.append( QgsField(fname,QVariant.Int) )
                     casters.append(int)
                 elif np.issubdtype(ftype,np.float):
-                    my_attrs.append( QgsField(fname,QVariant.Double) )
-                    casters.append(float)
+                    attrs.append( QgsField(fname,QVariant.Double) )
+                    casters.append(float_or_null)
                 else:
                     self.log.info("Not ready for other datatypes (%s: %s)"%(fname,str(ftype)))
 
-        self.my_attrs=my_attrs
+        self.attrs=attrs
         self.casters=casters
 
-        pr.addAttributes(my_attrs)
+        pr.addAttributes(attrs)
         qlayer.updateFields() # tell the vector layer to fetch changes from the provider
 
         if not existing:
@@ -543,7 +608,6 @@ class UmbraEdgeLayer(UmbraSubLayer):
         # shouldn't be necessary
         layer.dataProvider().deleteFeatures(layer.allFeatureIds())
 
-        # takes an existing line memory layer, adds in nodes from g
         feats=[]
         valid=[]
         for j in self.grid.valid_edge_iter():
@@ -558,8 +622,8 @@ class UmbraEdgeLayer(UmbraSubLayer):
         self.grid.edges['feat_id'][valid]=[f.id() for f in outFeats]
 
     def set_feature_attributes(self,j,feat):
-        feat.initAttributes(len(self.my_attrs))
-        for idx,eattr in enumerate(self.my_attrs):
+        feat.initAttributes(len(self.attrs))
+        for idx,eattr in enumerate(self.attrs):
             name=eattr.name()
             typecode=eattr.type()
             caster=self.casters[idx]
@@ -581,16 +645,9 @@ class UmbraEdgeLayer(UmbraSubLayer):
             #     continue
             
     def add_field(self,field,name,np_type):
-        self.grid.add_edge_field(name,np.zeros(self.grid.Nedges(),np_type))
-        self.my_attrs.append(field)
+        self.add_field_generic(field,name,np_type,
+                               self.grid.add_edge_field,self.grid.Nedges())
         
-        if np_type==np.float64:
-            self.casters.append(float)
-        elif np_type==np.int32:
-            self.casters.append(int)
-        else:
-            self.casters.append(lambda x:x)
-
     def update_values(self,feat_id,attr_id,value):
         """
         Copy QGIS changes in attribute values to the grid
@@ -655,7 +712,7 @@ class UmbraEdgeLayer(UmbraSubLayer):
         fid=g.edges['feat_id'][j]
         attr_changes={fid:{}}
 
-        for idx,attr in enumerate(self.my_attrs):
+        for idx,attr in enumerate(self.attrs):
             name=attr.name()
             if name in k:
                 attr_changes[fid][idx]=self.casters[idx](k[name])
@@ -709,7 +766,7 @@ class UmbraCellLayer(UmbraSubLayer):
         else:
             qlayer=QgsVectorLayer("Polygon"+self.crs,self.prefix+"-cells","memory")
 
-        my_attrs=[QgsField("cell_id",QVariant.Int)]
+        attrs=[QgsField("cell_id",QVariant.Int)]
         casters=[int]
 
         for fidx,fdesc in enumerate(self.grid.cell_dtype.descr):
@@ -727,19 +784,19 @@ class UmbraCellLayer(UmbraSubLayer):
                 self.log.info("Trying to add field for %s"%fname)
 
                 if np.issubdtype(ftype,np.int):
-                    my_attrs.append( QgsField(fname,QVariant.Int) )
+                    attrs.append( QgsField(fname,QVariant.Int) )
                     casters.append(int)
                 elif np.issubdtype(ftype,np.float):
-                    my_attrs.append( QgsField(fname,QVariant.Double) )
-                    casters.append(float)
+                    attrs.append( QgsField(fname,QVariant.Double) )
+                    casters.append(float_or_null)
                 else:
                     self.log.info("Not ready for other datatypes (%s: %s)"%(fname,str(ftype)))
 
-        self.my_attrs=my_attrs
+        self.attrs=attrs
         self.casters=casters
 
         pr = qlayer.dataProvider()
-        pr.addAttributes(my_attrs)
+        pr.addAttributes(attrs)
         qlayer.updateFields() # tell the vector layer to fetch changes from the provider
 
         if not existing:
@@ -808,7 +865,7 @@ class UmbraCellLayer(UmbraSubLayer):
         fid=g.cells['feat_id'][c]
         attr_changes={fid:{}}
 
-        for idx,attr in enumerate(self.my_attrs):
+        for idx,attr in enumerate(self.attrs):
             name=attr.name()
             if name in k:
                 attr_changes[fid][idx]=self.casters[idx](k[name])
@@ -861,8 +918,8 @@ class UmbraCellLayer(UmbraSubLayer):
         self.grid.cells[self.feat_id_name][valid]=[f.id() for f in outFeats]
 
     def set_feature_attributes(self,i,feat):
-        feat.initAttributes(len(self.my_attrs))
-        for idx,cattr in enumerate(self.my_attrs):
+        feat.initAttributes(len(self.attrs))
+        for idx,cattr in enumerate(self.attrs):
             name=cattr.name()
             typecode=cattr.type()
             if name=='cell_id':
@@ -878,6 +935,10 @@ class UmbraCellLayer(UmbraSubLayer):
             #     continue
             # QGIS doesn't know about numpy types
 
+    def add_field(self,field,name,np_type):
+        self.add_field_generic(field,name,np_type,
+                               self.grid.add_cell_field,self.grid.Ncells())
+            
     def update_values(self,feat_id,attr_id,value):
         """
         Copy QGIS changes in attribute values to the grid
@@ -909,7 +970,7 @@ class UmbraCellCenterLayer(UmbraCellLayer):
             qlayer=QgsVectorLayer("Point"+self.crs,self.prefix+"-centers","memory")
 
         # for now, cell centers don't carry all of the fields like cell polygons do.
-        self.my_attrs=[]
+        self.attrs=[]
         self.casters=[]
 
         if not existing:

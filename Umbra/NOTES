@@ -473,3 +473,13 @@ Migrate to QGIS3:
 Fuller handling of fields:
  - does editing currently work? should. ready to test.  adding fields should also work.
    
+What about missing values? QVariant? in update_values_generic
+ - maybe it works now for floats.
+
+The fields are getting written out, but coming back in as empty (at least for nodes)
+
+- Better on loading float fields in to convert nan to NULL.
+- And have float-valued fields default to nan in unstructured_grid.
+
+
+

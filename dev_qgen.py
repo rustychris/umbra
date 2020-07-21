@@ -21,57 +21,16 @@ from stompy.grid import triangulate_hole,front
 import six
 ##
 
+six.moves.reload_module(utils)
 six.moves.reload_module(unstructured_grid)
 six.moves.reload_module(exact_delaunay)
 six.moves.reload_module(front)
 
-##
-
+## 
 # similar codes as in front.py
 FREE=0 # default
 RIGID=1
 SLIDE=2
-
-# generating grid
-gen=unstructured_grid.UnstructuredGrid(max_sides=150,
-                                       extra_node_fields=[('ij',np.int32,2)],
-                                       extra_edge_fields=[('dij',np.int32,2)])
-def node_ij_to_edge(g):
-    dij=(g.nodes['ij'][g.edges['nodes'][:,1]]
-         - g.nodes['ij'][g.edges['nodes'][:,0]])
-    g.add_edge_field('dij',dij,on_exists='replace')
-    
-
-if 0:
-    # Simple test case - rectangle
-    gen.add_rectilinear([0,0],[100,200],2,2)
-    gen.nodes['ij']= (gen.nodes['x']/10).astype(np.int32)
-
-    # test slight shift in xy:
-    sel=gen.nodes['x'][:,1]>100
-    gen.nodes['x'][sel, 0] +=30
-    # and in ij
-    gen.nodes['ij'][sel,0] += 2
-
-    node_ij_to_edge(gen)
-else:
-    # Slightly more complex: convex polygon
-    # 6 - 4
-    # | 2 3
-    # 0 1
-    n0=gen.add_node(x=[0,0]    ,ij=[0,0])
-    n1=gen.add_node(x=[100,0]  ,ij=[10,0])
-    n2=gen.add_node(x=[100,205],ij=[10,20])
-    n3=gen.add_node(x=[155,190],ij=[15,20])
-    n4=gen.add_node(x=[175,265],ij=[15,30])
-    n6=gen.add_node(x=[0,300]  ,ij=[0,30])
-    
-    gen.add_cell_and_edges(nodes=[n0,n1,n2,n3,n4,n6])
-
-    node_ij_to_edge(gen)
-
-##
-
 
 class NodeDiscretization(object):
     def __init__(self,g):
@@ -182,8 +141,16 @@ class NodeDiscretization(object):
 
 
 class QuadGen(object):
-    def __init__(self,gen,execute=True):
+    def __init__(self,gen,execute=True,ij_src='edges'):
         self.gen=gen
+
+        if ij_src=='nodes':
+            self.fill_ij_interp(gen) # unsure here.
+            self.node_ij_to_edge(gen)
+
+        if 'ij_fixed' not in gen.nodes.dtype.names:
+            gen.add_node_field('ij_fixed',np.ones(gen.Nnodes(),np.bool8))
+        
         if execute:
             self.add_bezier(gen)
             self.create_intermediate_grid()
@@ -191,7 +158,47 @@ class QuadGen(object):
             self.smooth_interior_quads(self.g_int)
             self.calc_psi_phi()
             self.adjust_intermediate_by_psi_phi()
+
+    def node_ij_to_edge(self,g):
+        dij=(g.nodes['ij'][g.edges['nodes'][:,1]]
+             - g.nodes['ij'][g.edges['nodes'][:,0]])
+        g.add_edge_field('dij',dij,on_exists='overwrite')
+
+    def fill_ij_interp(self,gen):
+        # First, copy any 'i','j' fields that are separate in to a vector field
+        # If there isn't an ij, make it.
+        gen.add_node_field('ij',np.nan*np.ones( (gen.Nnodes(),2)),
+                           on_exists='pass')
+
+        # Incoming data may be split to separate i,j fields
+        if 'i' in gen.nodes.dtype.names:
+            copy_i=np.isnan(gen.nodes['ij'][:,0]) & np.isfinite(gen.nodes['i'])
+            gen.nodes['ij'][copy_i,0]=gen.nodes['i'][copy_i]
+        if 'j' in gen.nodes.dtype.names:
+            copy_j=np.isnan(gen.nodes['ij'][:,1]) & np.isfinite(gen.nodes['j'])
+            gen.nodes['ij'][copy_j,1]=gen.nodes['j'][copy_j]
         
+        # the rest are filled by linear interpolation
+        gen.add_node_field('ij_fixed', np.isfinite(gen.nodes['ij']), on_exists='overwrite')
+
+        for idx in [0,1]:
+            node_vals=gen.nodes['ij'][:,idx] 
+            strings=gen.extract_linear_strings()
+            for s in strings:
+                if s[0]==s[-1]:
+                    # cycle, so we can roll
+                    has_val=np.nonzero( np.isfinite(node_vals[s]) )[0]
+                    if len(has_val):
+                        s=np.roll(s[:-1],-has_val[0])
+                        s=np.r_[s,s[0]]
+                s_vals=node_vals[s]
+                dists=utils.dist_along( gen.nodes['x'][s] )
+                valid=np.isfinite(s_vals)
+                fill_vals=np.interp( dists[~valid],
+                                     dists[valid], s_vals[valid] )
+                node_vals[s[~valid]]=fill_vals
+
+            
     def create_intermediate_grid(self):
         # target grid
         self.g_int=g=unstructured_grid.UnstructuredGrid(max_sides=4,
@@ -200,28 +207,32 @@ class QuadGen(object):
                                                                            ('rigid',np.int32)])
         gen=self.gen
         for c in gen.valid_cell_iter():
-            ijs=[]
-            ns=gen.cell_to_nodes(c)
-            xys=gen.nodes['x'][ns]
-            ijs=[ np.array([0,0]) ]
             local_edges=gen.cell_to_edges(c,ordered=True)
-            for j in local_edges:
-                if gen.edges['cells'][j,0]==c:
-                    s=1
-                elif gen.edges['cells'][j,1]==c:
-                    s=-1
-                else: assert 0
-                ijs.append( ijs[-1]+s*gen.edges['dij'][j] )
+            flip=(gen.edges['cells'][local_edges,0]!=c)
+            
+            edge_nodes=gen.edges['nodes'][local_edges]
+            edge_nodes[flip,:] = edge_nodes[flip,::-1]
+
+            dijs=gen.edges['dij'][local_edges] * ((-1)**flip)[:,None]
+            xys=gen.nodes['x'][edge_nodes[:,0]]
+            ij0=gen.nodes['ij'][edge_nodes[0,0]]
+            ijs=np.cumsum(np.vstack([ij0,dijs]),axis=0)
+
+            # Sanity check to be sure that all the dijs close the loop.
             assert np.allclose( ijs[0],ijs[-1] )
 
             ijs=np.array(ijs[:-1])
-            ijs-=ijs.min(axis=0) # force to have ll corner at (0,0)
+            # Actually don't, so that g['ij'] and gen['ij'] match up.
+            # ijs-=ijs.min(axis=0) # force to have ll corner at (0,0)
+            ij0=ijs.min(axis=0)
+            ijN=ijs.max(axis=0)
+            ij_size=ijN-ij0
 
             # Create in ij space
-            patch=g.add_rectilinear(p0=[0,0],
-                                    p1=ijs.max(axis=0),
-                                    nx=int(1+ijs[:,0].max()),
-                                    ny=int(1+ijs[:,1].max()))
+            patch=g.add_rectilinear(p0=ij0,
+                                    p1=ijN,
+                                    nx=int(1+ij_size[0]),
+                                    ny=int(1+ij_size[1]))
             pnodes=patch['nodes'].ravel()
 
             g.nodes['gen_j'][pnodes]=-1
@@ -316,7 +327,7 @@ class QuadGen(object):
         bez[:,0,:] = gen.nodes['x'][gen.edges['nodes'][:,0]]
         bez[:,order,:] = gen.nodes['x'][gen.edges['nodes'][:,1]]
 
-        gen.add_edge_field('bez', bez, on_exists='replace')
+        gen.add_edge_field('bez', bez, on_exists='overwrite')
 
         for n in gen.valid_node_iter():
             js=gen.node_to_edges(n)
@@ -428,7 +439,7 @@ class QuadGen(object):
         curves
         """
         gen=self.gen
-        g=self.g_int
+        g=self.g_int.copy()
 
         # This one gets tricky with the floating-point ij values.
         # gen.nodes['ij'] may be float valued.
@@ -481,62 +492,28 @@ class QuadGen(object):
 
             for n,point in zip(g_nodes,points):
                 g.modify_node(n,x=point)
-            # dij_up=dij/steps
-            # 
-            # for i in range(1,len(points)-1):
-            #     ij0=gen.nodes['ij'][n0]
-            #     ijN=gen.nodes['ij'][nN]
-            #     ij_i=ij0+i*dij_up
-            # 
-            #     n=np.nonzero( np.all( g.nodes['ij']==ij_i, axis=1))[0][0]
-            #     g.modify_node(n,x=points[i])
 
-    def smooth_interior_quads_basic(self,g):
-        # redistribute interior nodes evenly
-        # by solving laplacian
-        # Still have an issue where tight bends will allow nodes to
-        # move outside the boundary.
-        M=sparse.dok_matrix( (g.Nnodes(),g.Nnodes()), np.float64)
-        rhs_nodes=-1*np.ones(g.Nnodes(),np.int32)
-        for n in g.valid_node_iter():
-            if g.is_boundary_node(n):
-                M[n,n]=1
-                rhs_nodes[n]=n
-            else:
-                nbrs=g.node_to_nodes(n)
-                if 0: # isotropic
-                    M[n,n]=-len(nbrs)
-                    for nbr in nbrs:
-                        M[n,nbr]=1
-                else: # see about allowing some anisotropy
-                    # In the weighting, want to normalize by distances
-                    i_length=0
-                    j_length=0
-                    dists=utils.dist(g.nodes['x'][n],g.nodes['x'][nbrs])
-                    ij_deltas=np.abs(g.nodes['ij'][n] - g.nodes['ij'][nbrs])
-                    # length scales for i and j
-                    ij_scales=1./( (ij_deltas*dists[:,None]).sum(axis=0) )
-                    
-                    for nbr,ij_delta in zip(nbrs,ij_deltas):
-                        fac=(ij_delta*ij_scales).sum()
-                        M[n,nbr]=fac
-                        M[n,n]-=fac
-                    
-        rhs_x=np.where( rhs_nodes<0, 0, g.nodes['x'][rhs_nodes,0])
-        new_x=sparse.linalg.spsolve(M.tocsr(),rhs_x)
-        rhs_y=np.where( rhs_nodes<0, 0, g.nodes['x'][rhs_nodes,1])
-        new_y=sparse.linalg.spsolve(M.tocsr(),rhs_y)
-
-        g.nodes['x'][:,0]=new_x
-        g.nodes['x'][:,1]=new_y
-
-    def smooth_interior_quads_sliding(self,g,iterations=5):
+    def smooth_interior_quads(self,g,iterations=3):
         """
         Smooth quad grid by allowing boundary nodes to slide, and
         imparting a normal constraint at the boundary.
         """
-        curve=self.gen_bezier_curve()
+        # So the anisotropic smoothing has a weakness where the spacing
+        # of boundary nodes warps the interior.
+        # Currently I smooth x and y independently, using the same matrix.
 
+        # But is there a way to locally linearize where slidable boundary nodes
+        # can fall, forcing their internal edge to be perpendicular to the boundary?
+
+        # For a sliding boundary node [xb,yb] , it has to fall on a line, so
+        # c1*xb + c2*yb = c3
+        # where [c1,c2] is a normal vector of the line
+
+        # And I want the edge to its interior neighbor (xi,yi) perpendicular to that line.
+        # (xb-xi)*c1 + (yb-yi)*c2 = 0
+        
+        curve=self.gen_bezier_curve()
+        
         N=g.Nnodes()
 
         for slide_it in utils.progress(range(iterations)):
@@ -618,10 +595,9 @@ class QuadGen(object):
             for n in g.valid_node_iter():
                 if g.nodes['gen_j'][n]>=0:
                     new_f=curve.point_to_f(g.nodes['x'][n],rel_tol='best')
-                    g.nodes['x'][n] = c(new_f)
+                    g.nodes['x'][n] = curve(new_f)
 
         return g
-        
 
     def bezier_boundary_polygon(self):
         """
@@ -638,156 +614,140 @@ class QuadGen(object):
         boundary=g_tri.nodes['x'][boundary_linestring]
         return geometry.Polygon(boundary)
         
-    def get_intermediate_triangular(self):
-        # Nodes, bounds and nodes['ij'] of g_int, but made of only triangles.
-        if 0:
-            gtri=self.g_int.copy()
-            gtri.make_triangular()
-        elif 0:
-            # Alternative approach to get the triangulated grid:
-            poly=self.bezier_boundary_polygon()
-
-            # drop internal nodes outside that boundary
-            gtri=self.g_int.copy()
-            internal_nodes=gtri.nodes['gen_j']<0
-            inside_nodes=gtri.select_nodes_intersecting(geom=poly)
-            bad_nodes=internal_nodes & (~inside_nodes)
-            for n in np.nonzero(bad_nodes)[0]:
-                gtri.delete_node_cascade(n)
-            gtri.renumber(reorient_edges=False)
-
-            # Could just delete all of the internal edges
-            g_dt=exact_delaunay.Triangulation()
-            g_dt.bulk_init(gtri.nodes['x'])
-
-            # Constrain outside boundary:
-            # (depending on details, could reuse whatever was
-            #  used in generating poly above)
-            for j in gtri.valid_edge_iter():
-                ns=gtri.edges['nodes'][j]
-                gen_js=gtri.nodes['gen_j'][ns]
-
-                if (gen_js[0]>=0) and (gen_js[1]>=0):
-                    g_dt.add_constraint(ns[0],ns[1])
-                else:
-                    # clear out so internal edges can be replaced by
-                    # delaunay edges
-                    gtri.delete_edge_cascade(j)
-
-            # By retaining the boundary edges in gtri, avoid roundoff
-            # issues testing edge centers on the boundary
-            # against the boundary.
-            ec=g_dt.edges_center()
-            for j in g_dt.valid_edge_iter():
-                if not poly.contains( geometry.Point(ec[j]) ):
-                    continue
-                dt_nodes=g_dt.edges['nodes'][j]
-                j_exist=gtri.nodes_to_edge(dt_nodes)
-                if j_exist is None:
-                    gtri.add_edge(nodes=dt_nodes)
-            gtri.make_cells_from_edges(max_sides=3)
-
-        else:
-            gtri=self.g_int.copy()
-            
-            # Delete all internal edges:
-            e2c=gtri.edge_to_cells(recalc=True)
-            seed_point=gtri.cells_centroid()[0]
-            for j in np.nonzero(e2c.min(axis=1)>=0)[0]:
-                gtri.delete_edge_cascade(j)
-            gtri.delete_orphan_nodes()
-            gtri.renumber(reorient_edges=False)
-
-
-            gnew=triangulate_hole.triangulate_hole(gtri,seed_point,hole_rigidity='all-nodes',splice=False)
-
-            # For starters, just see how the psi/phi solution looks on gnew
-            # So I need ij for the boundary nodes of gnew
-            node_ij=np.zeros( (gnew.Nnodes(),2), np.float64)
-            node_ij[:]=np.nan
-
-            c=0 # the cell I'm working in from gen
-            for jcount,j in enumerate(gen.cell_to_edges(c)):
-                gen_n=gen.edges['nodes'][j,:]
-                if gen.edges['cells'][j,1]==c:
-                    gen_n=gen_n[::-1]
-                else:
-                    assert gen.edges['cells'][j,0]==c
-
-                gnew_a=gnew.select_nodes_nearest( gen.nodes['x'][gen_n[0]] )
-                gnew_b=gnew.select_nodes_nearest( gen.nodes['x'][gen_n[1]] )
-
-                gnew_string=gnew.select_nodes_boundary_segment( gen.nodes['x'][gen_n] )
-
-                dist_along=utils.dist_along(gnew.nodes['x'][gnew_string])
-                alpha=dist_along/dist_along[-1]
-
-                node_ij[gnew_string,:]=( (1-alpha)[:,None]*gen.nodes['ij'][gen_n[0]]
-                                         + alpha[:,None]*gen.nodes['ij'][gen_n[1]] )
-
-            gnew.add_node_field('ij',node_ij,on_exists='overwrite')
-            gtri=gnew
-            
-        self.gtri=gtri            
-        return gtri
-        
     def calc_psi_phi(self):
-        # gtri=self.get_intermediate_triangular()
-        self.gtri=gtri=self.g_int
-
+        gtri=self.g_int
         self.nd=nd=NodeDiscretization(gtri)
 
         e2c=gtri.edge_to_cells()
 
-        if 1: # PSI
+        if 1: # new way that computes both in one go
+            # But in the long channel case, this totally blew up,
+            # while the method below was fairly well behaved.
+            # PSI
+            # check boundaries and determine where Laplacian BCs go
             boundary=e2c.min(axis=1)<0
-            dirichlet_nodes={}
+            i_dirichlet_nodes={} # for psi
+            j_dirichlet_nodes={} # for phi
             for e in np.nonzero(boundary)[0]:
                 n1,n2=gtri.edges['nodes'][e]
                 i1=gtri.nodes['ij'][n1,0]
                 i2=gtri.nodes['ij'][n2,0]
                 if i1==i2:
-                    dirichlet_nodes[n1]=i1
-                    dirichlet_nodes[n2]=i2
+                    i_dirichlet_nodes[n1]=i1
+                    i_dirichlet_nodes[n2]=i2
+                j1=gtri.nodes['ij'][n1,1]
+                j2=gtri.nodes['ij'][n2,1]
+                if j1==j2:
+                    # So why does this need to be inverted?
+                    j_dirichlet_nodes[n1]=-j1
+                    j_dirichlet_nodes[n2]=-j2
 
-            M,B=nd.construct_matrix(op='laplacian',dirichlet_nodes=dirichlet_nodes)
+            Mblocks=[]
+            Bblocks=[]
+            if 1: # PSI
+                M_psi_Lap,B_psi_Lap=nd.construct_matrix(op='laplacian',dirichlet_nodes=i_dirichlet_nodes)
+                Mblocks.append( [M_psi_Lap,None] )
+                Bblocks.append( B_psi_Lap )
+            if 1: # PHI
+                M_phi_Lap,B_phi_Lap=nd.construct_matrix(op='laplacian',dirichlet_nodes=j_dirichlet_nodes)
+                Mblocks.append( [None,M_phi_Lap] )
+                Bblocks.append( B_phi_Lap )
+            if 0:
+                # PHI-PSI relationship
+                # So far this doesn't really help.
+                Mdx,Bdx=nd.construct_matrix(op='dx')
+                Mdy,Bdy=nd.construct_matrix(op='dy')
+                Mblocks.append( [Mdy,-Mdx] )
+                Mblocks.append( [Mdx, Mdy] )
+                Bblocks.append( np.zeros(Mdx.shape[1]) )
+                Bblocks.append( np.zeros(Mdx.shape[1]) )
 
-            psi=sparse.linalg.spsolve(M.tocsr(),B)
-            self.psi=psi
+            # solve
+            # dpsi_dy-dphi_dx = 0
+            # dpsi_dx+dphi_dy = 0
+            # Which looks like this
+            # [ M_Lap 0   ]          = [ B_psi_Lap ]
+            # [ Mdy  -Mdx ] [ psi ]  = [ 0         ]
+            # [ Mdx  Mdy  ] [ phi ]    [ 0         ]
 
-        if 1: # PHI
-            Mdx,Bdx=nd.construct_matrix(op='dx')
-            Mdy,Bdy=nd.construct_matrix(op='dy')
+            # Mdx.phi = u = Mdy.psi
+            # Mdy.phi = v = -Mdx.psi
+            # =>
+            # Mdy.psi - Mdx.phi
+            # Mdx.psi + Mdy.phi
 
-            dpsi_dx=Mdx.dot(psi)
-            dpsi_dy=Mdy.dot(psi)
+            bigM=sparse.bmat( Mblocks )
+            rhs=np.concatenate( Bblocks )
 
-            u=dpsi_dy
-            v=-dpsi_dx
-            # solve Mdx*phi = u
-            #       Mdy*phi = v
-            Mdxdy=sparse.vstack( (Mdx,Mdy) )
-            Buv=np.concatenate( (u,v))
+            psi_phi,*rest=sparse.linalg.lsqr(bigM,rhs)
+            self.psi=psi_phi[:gtri.Nnodes()]
+            self.phi=psi_phi[gtri.Nnodes():]
+        else:
+            if 1: # PSI
+                boundary=e2c.min(axis=1)<0
+                dirichlet_nodes={}
+                for e in np.nonzero(boundary)[0]:
+                    n1,n2=gtri.edges['nodes'][e]
+                    i1=gtri.nodes['ij'][n1,0]
+                    i2=gtri.nodes['ij'][n2,0]
+                    if i1==i2:
+                        dirichlet_nodes[n1]=i1
+                        dirichlet_nodes[n2]=i2
 
-            phi,*rest=sparse.linalg.lsqr(Mdxdy,Buv)
-            self.phi=phi
+                M,B=nd.construct_matrix(op='laplacian',dirichlet_nodes=dirichlet_nodes)
+
+                psi=sparse.linalg.spsolve(M.tocsr(),B)
+                self.psi=psi
+
+            if 1: # PHI
+                Mdx,Bdx=nd.construct_matrix(op='dx')
+                Mdy,Bdy=nd.construct_matrix(op='dy')
+
+                dpsi_dx=Mdx.dot(psi)
+                dpsi_dy=Mdy.dot(psi)
+
+                u=dpsi_dy
+                v=-dpsi_dx
+                # solve Mdx*phi = u
+                #       Mdy*phi = v
+                Mdxdy=sparse.vstack( (Mdx,Mdy) )
+                Buv=np.concatenate( (u,v))
+
+                phi,*rest=sparse.linalg.lsqr(Mdxdy,Buv)
+                self.phi=phi
 
     def plot_psi_phi(self,num=4):
         plt.figure(num).clf()
-        self.gtri.plot_edges(color='k',lw=0.5,alpha=0.2)
-        self.gtri.contour_node_values(self.psi,20,linewidths=1.5,colors='orange')
-        self.gtri.contour_node_values(self.phi,20,linewidths=1.5,colors='blue')
+        fig,ax=plt.subplots(num=num)
+
+        di,dj=np.nanmax(self.gen.nodes['ij'],axis=0) - np.nanmin(self.gen.nodes['ij'],axis=0)
+
+        self.g_int.plot_edges(color='k',lw=0.5,alpha=0.2)
+        cset_psi=self.g_int.contour_node_values(self.psi,int(di/2),
+                                                linewidths=1.5,linestyles='solid',colors='orange',
+                                                ax=ax)
+        cset_phi=self.g_int.contour_node_values(self.phi,int(dj/2),
+                                                linewidths=1.5,linestyles='solid',colors='blue',
+                                                ax=ax)
+        ax.axis('tight')
+        ax.axis('equal')
+
+        ax.clabel(cset_psi, fmt="i=%g", fontsize=10, inline=False, use_clabeltext=True)
+        ax.clabel(cset_phi, fmt="j=%g", fontsize=10, inline=False, use_clabeltext=True)
         
-    def adjust_intermediate_by_psi_phi(self):
+    def adjust_intermediate_by_psi_phi(self,update=True):
         """
         Move internal nodes of g_int according to phi and psi fields
+
+        update: if True, actually update g_int, otherwise return the new values
         """
-        gtri=self.gtri
+        gtri=self.g_int
         gen=self.gen
-        g=self.g_int
+        g=self.g_final=self.g_int.copy()
 
         for coord in [0,1]: # i,j
             gen_valid=(~gen.nodes['deleted'])&(gen.nodes['ij_fixed'][:,coord])
+            # subset of gtri nodes that map to fixed gen nodes
             gen_to_gtri_nodes=[gtri.select_nodes_nearest(x)
                                for x in gen.nodes['x'][gen_valid]]
 
@@ -798,10 +758,10 @@ class QuadGen(object):
             else:
                 all_field=self.phi[gen_to_gtri_nodes]
 
-            # will have coords
+            # Build the 1-D mapping of i/j to psi/phi
+            # [ {i or j value}, {mean of psi or phi at that i/j value} ]
             coord_to_field=np.array( [ [k,np.mean(all_field[elts])]
                                        for k,elts in utils.enumerate_groups(all_coord)] )
-
             if coord==0:
                 i_psi=coord_to_field
             else:
@@ -813,27 +773,42 @@ class QuadGen(object):
         i_psi[:,1] = np.sort(i_psi[:,1])
         j_phi[:,1] = np.sort(j_phi[:,1])[::-1]
 
+        # Calculate the psi/phi values on the nodes of the target grid
+        # (which happens to be the same grid as where the psi/phi fields were
+        #  calculated)
         g_psi=np.interp( g.nodes['ij'][:,0],
                          i_psi[:,0],i_psi[:,1])
         g_phi=np.interp( g.nodes['ij'][:,1],
                          j_phi[:,0], j_phi[:,1])
 
         # Use gtri to go from phi/psi to x,y
+        # I think this is where it goes askew.
+        # This maps {psi,phi} space onto {x,y} space.
+        # But psi,phi is close to rectilinear, and defined on a rectilinear
+        # grid.  Whenever some g_psi or g_phi is close to the boundary,
+        # the Delaunay triangulation is going to make things difficult.
         interp_xy=utils.LinearNDExtrapolator( np.c_[self.psi,self.phi],
                                               gtri.nodes['x'],eps=0.5 )
+        # Save all the pieces for debugging:
+        self.interp_xy=interp_xy
+        self.interp_domain=np.c_[self.psi,self.phi]
+        self.interp_image=gtri.nodes['x']
+        self.interp_tgt=np.c_[g_psi,g_phi]
+        
         new_xy=interp_xy( np.c_[g_psi,g_phi] )
 
-        g.nodes['x']=new_xy
-        g.refresh_metadata()
+        if update:
+            g.nodes['x']=new_xy
+            g.refresh_metadata()
+        else:
+            return new_xy
 
     def plot_result(self,num=5):
         plt.figure(num).clf()
-        self.g_int.plot_edges()
+        self.g_final.plot_edges()
         plt.axis('equal')
 
-if 0:
-    qg=QuadGen(gen)
-    qg.plot_result()
+##
 
 # HERE:
 #  Think about how usage would actually work, esp.
@@ -851,97 +826,120 @@ if 0:
 
 #  See how higher order interp works for phi,psi
 
-gen=unstructured_grid.UnstructuredGrid.from_pickle("../pescadero/bathy/cbec-survey-interp-grid.pkl")
-
-## 
+gen=unstructured_grid.UnstructuredGrid.from_pickle("../pescadero/bathy/cbec-survey-interp-grid7.pkl")
 gen.renumber(reorient_edges=False)
 
-gen.plot_nodes(labeler='id')
-gen.plot_edges(labeler='id')
+# For intermediate testing:
+gen.delete_cell(0)
+gen.delete_orphan_edges()
+gen.delete_orphan_nodes()
 
-# For now, have have a cell.
-gen.modify_max_sides(1000)
+## 
+qg=QuadGen(gen,execute=True,ij_src='nodes')
+##
+qg.plot_psi_phi()
+##
+qg.plot_result()
 
-cell_nodes=gen.extract_linear_strings()[0][:-1]
-gen.add_cell(nodes=cell_nodes)
+## 
+new_xy=qg.adjust_intermediate_by_psi_phi(update=False)
 
-NA=-9999
+if 0:
+    plt.figure(2).clf()
+    fig,ax=plt.subplots(num=2)
 
-ij=np.zeros((gen.Nnodes(),2),np.float64)
-ij[:,:]=NA
+    ax.plot( qg.interp_domain[:,0],qg.interp_domain[:,1],'k.',label='Domain' )
+    ax.plot( qg.interp_tgt[:,0], qg.interp_tgt[:,1], 'r.', label='Target')
+    ax.axis('equal')
+    ax.legend()
 
-gen.add_node_field('ij',ij,on_exists='replace')
+# So qg.interp_tgt is nice and evenly spaced, since it comes from a linear
+# mapping of i/j (which start off nice), to phi/psi, which are monotonic.
 
-corners=[  (552203.2836289784, 4124587.264231968),
-           (552178.9600882703, 4124531.13298418),
-           (552475.2083404858, 4124249.853064708),
-           (552468.9715351759, 4124292.2633408145)]
- 
-# Just set the corners:
-for val,pnt in zip( [ [20,80],
-                      [0,80],
-                      [0,0],
-                      [20,0] ],
-                    corners ):
-    n=gen.select_nodes_nearest(pnt)
-    gen.nodes['ij'][n] = val
+# it's the black, 'domain' points which are uneven.
+# And some of the red points are considerably outside the black.
+# so interpolation is definitely not enough.
 
-def fill_ij_interp(gen):
-    # the rest are filled by linear interpolation
-    gen.add_node_field( 'ij_fixed', gen.nodes['ij']!=NA, on_exists='replace')
-    
-    for idx in [0,1]:
-        node_vals=gen.nodes['ij'][:,idx] 
-        strings=gen.extract_linear_strings()
-        for s in strings:
-            if s[0]==s[-1]:
-                # cycle, so we can roll
-                has_val=np.nonzero( node_vals[s]!=NA )[0]
-                if len(has_val):
-                    s=np.roll(s[:-1],-has_val[0])
-                    s=np.r_[s,s[0]]
-            s_vals=node_vals[s]
-            dists=utils.dist_along( gen.nodes['x'][s] )
-            valid=s_vals!=NA
-            fill_vals=np.interp( dists[~valid],
-                                 dists[valid], s_vals[valid] )
-            node_vals[s[~valid]]=fill_vals
+# Maybe come back to this if a more basic extra/interpolation scheme
+# fails.
 
-fill_ij_interp(gen)
+# One advantage of solving psi/phi on the same grid that I'm trying to adjust
+# *might* be that I can compare at the nodes what their "solved" psi/phi is,
+# and what psi/phi I want them to be. That gives me a "correction" in psi/phi
+# space. I could map that change in psi/phi to a change in x/y by calculating
+# dx/dpsi, dy/dpsi, dx/dphi, dy/dphi.
 
-# plt.figure(6).clf()
-# gen.plot_edges(lw=0.5)
-# gen.plot_nodes(labeler='ij')
+# "error", as in the solved node values of psi/phi and what psi/phi I want
+# at those nodes.
+dpsiphi=qg.interp_domain[:,:] - qg.interp_tgt[:,:]
 
-node_ij_to_edge(gen)
+# need to calculate on gtri the gradients of x and y w.r.t. psi/phi.
+g_psiphi=qg.g_int.copy()
+# save the x coordinates
+g_psiphi.add_node_field( 'xreal', g_psiphi.nodes['x'] )
+# move the grid to psi/phi space
+g_psiphi.nodes['x'] = np.c_[ qg.psi, qg.phi]
 
-qg=QuadGen(gen,execute=False)
+if 0:
+    plt.figure(3).clf()
+    fig,ax=plt.subplots(num=3)
+    g_psiphi.plot_edges(ax=ax,color='k',lw=0.5)
+    ax.axis('equal')
 
-qg.add_bezier(gen)
-# qg.plot_gen_bezier()
+#  then use NodeDiscretization to calculate gradients
+nd_pp=NodeDiscretization(g_psiphi)
 
-qg.create_intermediate_grid()
-qg.adjust_intermediate_bounds()
+M_dx,B_dx=nd_pp.construct_matrix(op='dx')
+M_dy,B_dy=nd_pp.construct_matrix(op='dy')
 
-qg.smooth_interior_quads_sliding(qg.g_int)
+dx_dpsi=M_dx.dot( g_psiphi.nodes['xreal'][:,0])
+dy_dpsi=M_dx.dot( g_psiphi.nodes['xreal'][:,1])
+dx_dphi=M_dy.dot( g_psiphi.nodes['xreal'][:,0])
+dy_dphi=M_dy.dot( g_psiphi.nodes['xreal'][:,1])
 
-qg.plot_intermediate()
+x_corr=-dpsiphi[:,0]*dx_dpsi + -dpsiphi[:,1]*dx_dphi
+y_corr=-dpsiphi[:,0]*dy_dpsi + -dpsiphi[:,1]*dy_dphi
 
-g_int_preadjust=qg.g_int.copy()
+if 0:
+    plt.figure(4).clf()
+    fig,ax=plt.subplots(num=4)
+    qg.g_int.plot_edges(ax=ax,color='k',lw=0.5)
+    ax.quiver( qg.g_int.nodes['x'][:,0], qg.g_int.nodes['x'][:,1],
+               x_corr,y_corr,color='b')
+    # Compare that to what we would have gotten with extrapolation
+    ax.quiver( qg.g_int.nodes['x'][:,0], qg.g_int.nodes['x'][:,1],
+               new_xy[:,0] - qg.g_int.nodes['x'][:,0],
+               new_xy[:,1] - qg.g_int.nodes['x'][:,1],
+               color='r')
+
+    ax.axis('equal')
+
+qg.g_int.nodes['x'][:,0] += 0.1*x_corr
+qg.g_int.nodes['x'][:,1] += 0.1*y_corr
+qg.g_int.refresh_metadata()
+
+qg.plot_result()
+plt.axis( (552296.8814006539, 552394.9230736123, 4124800.417367231, 4124871.5835212837))
 
 ##
 
-# Seems that the internal quad spacing code is letting
-# nodes bunch up on an inside curve.
-qg.calc_psi_phi()
+# Not so great on this long winding channel.
+# Probably doesn't help that the psi/phi treatment is not symmetric.
+# Making i/j closer to 1:1 helps significantly.  Too much compression
+# in one direction was then tripping up the curve.point_to_f code.
+# But final interpolation still looks pretty bad
 
+# But there are more basic problems before that.
+#   probably better to make the system over-determined, and for boundary
+#   nodes include both a spacing term and a normal vector term.
+#   and there is some funny business at the end of that long channel.
+#    nodes don't quite end up on the corners or something.
 qg.plot_psi_phi()
 
-qg.adjust_intermediate_by_psi_phi()
+## 
 
-qg.plot_result()
-plt.figure(6).clf()
-g_int_preadjust.plot_edges(color='green')
+#ds=qg.g_int.write_ugrid('/home/rusty/src/pescadero/bathy/lagoon-quads.nc',
+#                        overwrite=True)
 
 # As much as the preadjust grid looks pretty nice, the post-adjust grid
 # does have better orthogonality metrics (better than half the angle error,
@@ -950,48 +948,91 @@ g_int_preadjust.plot_edges(color='green')
 # Would need to rewrite the sampling to take into account local scale of
 # psi/phi.
 
-##
+# The final grid is still not that close to orthogonal.  Probably an issue
+# with how the interpolation is handled?
 
-# Step back for a moment:
-# What would it look like to instead create the rough grid, and
-# then try to solve for the layout of the original nodes in a way
-# that satisfies orthogonality?
+## 
 
-# Go back to that paper about morphing a grid towards orthogonal.
+if 0:
+    # Simple test case - rectangle
+    gen=unstructured_grid.UnstructuredGrid(max_sides=150,
+                                       extra_node_fields=[('ij',np.int32,2)],
+                                       extra_edge_fields=[('dij',np.int32,2)])
 
-# One paper:
-# Numerical conformal mapping and mesh generation for
-# polygonal and multiply-connected regions
-# B. Lin and S. N. Chandler-Wilde
+    gen.add_rectilinear([0,0],[100,200],2,2)
+    gen.nodes['ij']= (gen.nodes['x']/10).astype(np.int32)
 
-# But that other paper allowed more arbitrary grids
+    # test slight shift in xy:
+    sel=gen.nodes['x'][:,1]>100
+    gen.nodes['x'][sel, 0] +=30
+    # and in ij
+    gen.nodes['ij'][sel,0] += 2
+else:
+    # Slightly more complex: convex polygon
+    # 6 - 4
+    # | 2 3
+    # 0 1
+    gen=unstructured_grid.UnstructuredGrid(max_sides=150,
+                                           extra_node_fields=[('ij',np.int32,2)],
+                                           extra_edge_fields=[('dij',np.int32,2)])
+    
+    n0=gen.add_node(x=[0,0]    ,ij=[0,0])
+    n1=gen.add_node(x=[100,0]  ,ij=[10,0])
+    n2=gen.add_node(x=[100,205],ij=[10,20])
+    n3=gen.add_node(x=[155,190],ij=[15,20])
+    n4=gen.add_node(x=[175,265],ij=[15,30])
+    n6=gen.add_node(x=[0,300]  ,ij=[0,30])
+    
+    gen.add_cell_and_edges(nodes=[n0,n1,n2,n3,n4,n6])
 
-# A Method for Orthogonal Grid Generation
-# Mehmet Ali Akinlar1, Stephen Salako2 and Guojun Liao3
-# grid deformation approach, "nearly" orthogonal. But the results
-# look pretty bad.
+qg=QuadGen(gen,execute=False,ij_src='nodes')
 
-# So the anisotropic smoothing has a weakness where the spacing
-# of boundary nodes warps the interior.
-# Currently I smooth x and y independently, using the same matrix.
+qg.add_bezier(gen)
+qg.plot_gen_bezier()
 
-# But is there a way to locally linearize where slidable boundary nodes
-# can fall, forcing their internal edge to be perpendicular to the boundary?
-
-# For a sliding boundary node [xb,yb] , it has to fall on a line, so
-# c1*xb + c2*yb = c3
-# where [c1,c2] is a normal vector of the line
-
-# And I want the edge to its interior neighbor (xi,yi) perpendicular to that line.
-# (xb-xi)*c1 + (yb-yi)*c2 = 0
-
-# So all of that seems legit.
-# I'm a little wary that the system is still square -- may mean that it reaches
-# a crazy solution
-
+## 
 
 # HERE:
-#   I think it's worth trying to solve phi/psi on the intermediate quad grid.
-#   to see different the result is.  That means refactoring and adapting the
-#   front.py approach to triangular, so the code that puts ij back on the grid
-#   can 
+#  Status: the adjust_by_psi_phi step had been using a poorly conditioned
+#    extrapolation approach. That led to boundary nodes getting bad positions.
+#  A separate approach estimates the error in node position in psi/phi space,
+#  the gradients of x/y in psi/phi space. and adjusts nodes by {psi,phi} error * d{x,y}/d{psi,phi}
+#  In one constricted area, this has to take fairly small steps, and after several iterations
+#  the grid takes on an accordion fold pattern.  Not clear where the accordion fold comes
+#  from.
+# Next steps:
+#  It may be that the choice of grid design is not worth making work.  Better would be to add in
+#  a divet around that bridge.
+# In the bigger picture, for real grid generation need to be able to process multiple
+# regions, embedded linestrings, non-simple polygons, and ragged edges.
+# the ragged edges may be a good test for going under that bridge with a divet.
+
+##
+
+# Simple test case - rectangle
+gen=unstructured_grid.UnstructuredGrid(max_sides=150,
+                                       extra_node_fields=[('i',np.float64),
+                                                          ('j',np.float64)])
+gen.add_rectilinear([0,0],[100,200],2,2)
+gen.nodes['i']= (gen.nodes['x'][:,0]/10.)
+gen.nodes['j']= (gen.nodes['x'][:,1]/10.)
+
+if 1: # make that into a trapezoid
+    na=gen.select_nodes_nearest([0,200])
+    gen.modify_node(na,x=[-50,200])
+    nb=gen.select_nodes_nearest([100,200])
+    gen.modify_node(nb,x=[150,200])
+
+qg=QuadGen(gen,execute=True,ij_src='nodes')
+
+qg.plot_psi_phi()
+
+# psi ranges from 0 to 10, over a width of 100.
+# Would expect phi to have a range of
+#   Q * L/W =
+#   10 * 200/100 = 20
+
+# phi ranges from -10 to +10.
+# As expected.
+
+## 

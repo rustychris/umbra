@@ -457,7 +457,7 @@ class Umbra(Boiler):
         glayer = self.active_gridlayer()
         if glayer is None:
             return
-        glayer.grid.renumber()
+        glayer.renumber()
         # not strictly renumbering, but generally you'd want to drop
         # unneeded nodes at the same time.
         glayer.grid.delete_orphan_nodes()

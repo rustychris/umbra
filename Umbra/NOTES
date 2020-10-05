@@ -480,6 +480,11 @@ The fields are getting written out, but coming back in as empty (at least for no
 
 - Better on loading float fields in to convert nan to NULL.
 - And have float-valued fields default to nan in unstructured_grid.
+- Seems that there is still some issue with default values.  
 
 
-
+- When saving grids, should *NOT* save the fields added by Umbra.
+- When calculating distances for selecting features, need to consider that the map projection
+  may have changed.  Currently when OTF reprojection is active, distances are wrong and
+  nothing can be selected.
+- when trying to create a cell but max_side is too small, flash a warning.

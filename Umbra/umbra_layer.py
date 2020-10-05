@@ -16,7 +16,7 @@ sys.path.append( os.path.join(os.environ["HOME"],"python") )
 
 from qgis.core import ( QgsGeometry, QgsPointXY, QgsFeature,QgsVectorLayer, QgsField,
                         QgsMarkerSymbol, QgsLineSymbol, QgsFillSymbol, QgsProject,
-                        QgsLayerTreeLayer )
+                        QgsLayerTreeLayer, Qgis )
 from qgis.PyQt.QtCore import QVariant
 
 import logging
@@ -289,11 +289,18 @@ class UmbraSubLayer(object):
         target: the numpy array (e.g. grid.cells) to update
         feat_id: the QGIS feature id being updated.  this will get mapped
          to an unstructured_grid id.
-
         """
         grid_name=self.attrs[attr_id].name()
-        items=np.nonzero( target['feat_id']==feat_id )[0] # SLOW! (maybe)
-        assert len(items)==1,"Pretty sure it should always be 1."
+        items=np.nonzero( (~target['deleted'])
+                          & (target['feat_id']==feat_id) )[0] # SLOW! (maybe)
+        if len(items)!=1:
+            msg="feat_id %s matched items %s"%( feat_id,
+                                                items )
+            log.error(msg)
+            if self.parent.iface is not None: 
+                self.parent.iface.messageBar().pushMessage("Error", msg, level=Qgis.Warning)
+            return 
+            
         # Casters are intended for the other way around, but used here
         # to guide some special checks.
         caster=self.casters[attr_id]
@@ -315,7 +322,8 @@ class UmbraSubLayer(object):
             np_value=value
             
         target[grid_name][items]=np_value
-        log.info("update_values generic")
+        log.info("update_values generic: grid_name %s value %s => np_value %s"%(grid_name,
+                                                                                value,np_value))
 
     def extend_grid(self):
         """
@@ -392,7 +400,7 @@ class UmbraNodeLayer(UmbraSubLayer):
         # The primary point of casters is to get from numpy types to plain python types.
         casters=[int]
 
-        for fidx,fdesc in enumerate(self.grid.node_dtype.descr):
+        for fidx,fdesc in enumerate(self.grid.nodes.dtype.descr):
             # descr gives string reprs of the types, use dtype
             # to get back to an object.
             fname=fdesc[0] ; ftype=np.dtype(fdesc[1])
@@ -404,6 +412,10 @@ class UmbraNodeLayer(UmbraSubLayer):
             if fname in ['x','feat_id']:
                 continue
 
+            if fshape is not None:
+                self.log.warning("Not ready for non-scalar fields (%s: %s)"%(fname,str(ftype)))
+                continue
+            
             if np.issubdtype(ftype,np.int):
                 attrs.append( QgsField(fname,QVariant.Int) )
                 casters.append(int)
@@ -450,6 +462,10 @@ class UmbraNodeLayer(UmbraSubLayer):
         self.grid.nodes['feat_id'][valid] = [f.id() for f in outFeats]
 
     def set_feature_attributes(self,n,feat):
+        """
+        push attributes for grid.nodes[n] to the provide 
+        QGIS feature feat.
+        """
         feat.initAttributes(len(self.attrs))
         for idx,attr in enumerate(self.attrs):
             name=attr.name()
@@ -562,7 +578,7 @@ class UmbraEdgeLayer(UmbraSubLayer):
         attrs=[QgsField("edge_id",QVariant.Int)]
         casters=[int]
 
-        for fidx,fdesc in enumerate(self.grid.edge_dtype.descr):
+        for fidx,fdesc in enumerate(self.grid.edges.dtype.descr):
             # descr gives string reprs of the types, use dtype
             # to get back to an object.
             fname=fdesc[0] ; ftype=np.dtype(fdesc[1])
@@ -575,9 +591,13 @@ class UmbraEdgeLayer(UmbraSubLayer):
                 continue
 
             if fname=='cells':
-                attrs += [QgsField("c0", QVariant.Int),
-                            QgsField("c1", QVariant.Int)]
-                casters += [int,int]
+                # Not sure when it would be useful to have this, and the machinery
+                # is not robust for vector-valued fields, or even pushing updates
+                # from UnstructuredGrid.
+                continue 
+                #attrs += [QgsField("c0", QVariant.Int),
+                #          QgsField("c1", QVariant.Int)]
+                #casters += [int,int]
             else:
                 if np.issubdtype(ftype,np.int):
                     attrs.append( QgsField(fname,QVariant.Int) )
@@ -769,7 +789,7 @@ class UmbraCellLayer(UmbraSubLayer):
         attrs=[QgsField("cell_id",QVariant.Int)]
         casters=[int]
 
-        for fidx,fdesc in enumerate(self.grid.cell_dtype.descr):
+        for fidx,fdesc in enumerate(self.grid.cells.dtype.descr):
             # descr gives string reprs of the types, use dtype
             # to get back to an object.
             fname=fdesc[0] ; ftype=np.dtype(fdesc[1])
@@ -1389,7 +1409,16 @@ class UmbraLayer(object):
         return QgsRectangle(xmin,ymin,xmax,ymax)
       
     def renumber(self):
-        self.grid.renumber()
+        self.grid.renumber(reorient_edges=False)
+        # Also recalculate edge->cells and similar
+        self.grid.edge_to_cells(recalc=True)
+        self.grid.update_cell_edges(select='all') # maybe less important.
+        bare=self.grid.orient_edges(on_bare_edge='return')
+        if len(bare):
+            txt=" ".join([str(j) for j in bare])
+            msg="Edges with no cell: %s"%txt
+            if self.iface is not None:
+                self.iface.messageBar().pushMessage("Info", msg, level=Qgis.Warning)
     
     # thin wrapper to grid editing calls
     # channel them through here to (a) keep consistent interface
@@ -1487,7 +1516,7 @@ class UmbraLayer(object):
         
     def add_edge(self,nodes):
         if self.grid.nodes_to_edge(*nodes) is not None:
-            self.log.info("Edge already existed, probably")
+            self.log.info("Edge already existed (nodes=%s), probably"%str(nodes))
             return
         
         self.add_edge_last_id=None
@@ -1563,6 +1592,7 @@ class UmbraLayer(object):
         cmd=GridCommand(self.grid,
                         "Triangulate hole",
                         do_triangulate_hole)
+        self.iface.messageBar().pushMessage("Info","Starting triangulate_hole",level=Qgis.Info)
         self.undo_stack.push(cmd)
         
     def add_quad_from_edge(self,e,orthogonal='edge'):

@@ -376,6 +376,7 @@ class UmbraEditorTool(QgsMapTool):
     def triangulate_hole(self,event):
         gl=self.gridlayer()
         if gl is None:
+            self.log.info('Triangulate_hole: no gridlayer found')
             return
         map_xy,pix_xy=self.event_to_map_xy(event)
         gl.triangulate_hole(seed=map_xy)

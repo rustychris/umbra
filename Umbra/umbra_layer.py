@@ -217,6 +217,19 @@ class UmbraSubLayer(object):
     def connect_qlayer(self):
         self.qlayer.beforeCommitChanges.connect(self.on_beforeCommitChanges)
 
+    def update_title_abstract(self):
+        """
+        Set or update the qlayer title and abstract, which generally
+        show the file path
+        """
+        if self.qlayer is None: return
+        if self.parent is None: return
+        if self.parent.path is None: return
+
+        self.qlayer.setTitle(os.path.basename(self.parent.path))
+        self.qlayer.setAbstract(self.parent.path)
+        
+        
     edits_to_commit=None
     
     def on_beforeCommitChanges(self):
@@ -1038,7 +1051,7 @@ class UmbraLayer(object):
         UmbraLayer.layer_count+=1
 
         if name is None:
-            name="grid%d"%UmbraLayer.layer_count
+            name=umbra.generate_grid_name()
         self.name=name
 
         self.layers=[] # SubLayer objects associated with this grid.
@@ -1055,6 +1068,8 @@ class UmbraLayer(object):
             self.grid_format=kws['grid_format']
         if 'path' in kws:
             self.path=kws['path']
+            for sl in self.layers:
+                sl.update_title_abstract()
 
     def write_to_project(self,prj,scope,doc,tag):
         # had been scope here, but pretty sure it should be tag.
@@ -1235,6 +1250,8 @@ class UmbraLayer(object):
             
             group=self.group() # assumes already created
             group.addChildNode(node_layer)
+
+        sublayer.update_title_abstract()
 
     def layer_by_tag(self,tag):
         for layer in self.layers:
@@ -1578,7 +1595,7 @@ class UmbraLayer(object):
                         do_split_edges)
         self.undo_stack.push(cmd)
 
-    def triangulate_hole(self,seed):
+    def triangulate_hole(self,seed,**kwargs):
         # make sure it's legal:
         c=self.grid.select_cells_nearest(seed,inside=True)
         if c is not None:
@@ -1587,7 +1604,16 @@ class UmbraLayer(object):
             
         def do_triangulate_hole(seed=seed):
             from stompy.grid import triangulate_hole
-            gnew=triangulate_hole.triangulate_hole(self.grid,seed)
+            gnew=triangulate_hole.triangulate_hole(self.grid,seed,**kwargs)
+
+            if not kwargs['splice']:
+                UmbraLayer(umbra=self.umbra,grid=gnew,path=None,
+                           grid_format='UGRID', # default. maybe doesn't matter.
+                           name=None)
+                my_layer = UmbraLayer.open_layer(umbra=self.umbra,
+                                                 grid_format='UGRID',# default?
+                                                 path=path)
+                my_layer.register_layers()
             
         cmd=GridCommand(self.grid,
                         "Triangulate hole",

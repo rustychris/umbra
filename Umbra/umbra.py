@@ -445,6 +445,9 @@ class Umbra(Boiler):
     def save_layer(self):
         glayer = self.active_gridlayer()
         if glayer is None:
+            self.iface.messageBar().pushMessage("Select layer!",
+                                                "No umbra layer selected",
+                                                level=Qgis.Info, duration=3)
             return
 
         # TODO: probably this gets routed through UmbraLayer?
@@ -456,6 +459,9 @@ class Umbra(Boiler):
     def renumber_layer(self):
         glayer = self.active_gridlayer()
         if glayer is None:
+            self.iface.messageBar().pushMessage("Select layer!",
+                                                "No umbra layer selected",
+                                                level=Qgis.Info, duration=3)
             return
         glayer.renumber()
         # not strictly renumbering, but generally you'd want to drop
@@ -533,6 +539,14 @@ class Umbra(Boiler):
     def grid_names(self):
         return [gl.name
                 for gl in self.gridlayers]
+    def generate_grid_name(self):
+        existing=self.grid_names()
+        for i in range(1000): # 1000 is arbitrary
+            name="grid%d"%i
+            if name not in existing:
+                return name
+        else:
+            raise Exception("How can all of the names be taken")
 
     def name_to_grid(self,name):
         for gl in self.gridlayers:

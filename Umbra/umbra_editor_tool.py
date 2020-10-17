@@ -9,7 +9,7 @@ import logging
 log=logging.getLogger('umbra.editor')
 
 # Copied / boilerplated from cadtools/singlesegmentfindertoolpy
-from . import umbra_layer
+from . import (umbra_layer, umbra_triangulate_hole)
 
 import numpy as np
 import traceback
@@ -53,7 +53,6 @@ class SlowOpDialog(QDialog):
         self.iface=iface
         # log.info("Calling setupUI")
         # self.setupUi(self)
-        self.iface=iface
 
     def startWorker(self, thunk):
         # create a new worker instance
@@ -379,7 +378,12 @@ class UmbraEditorTool(QgsMapTool):
             self.log.info('Triangulate_hole: no gridlayer found')
             return
         map_xy,pix_xy=self.event_to_map_xy(event)
-        gl.triangulate_hole(seed=map_xy)
+
+        # gl.triangulate_hole(seed=map_xy)
+        dialog=umbra_triangulate_hole.UmbraTriangulateHole(parent=self.iface.mainWindow(),
+                                                           iface=self.iface,
+                                                           layer=gl,seed_point=map_xy)
+        dialog.exec_()
             
     def optimize_local(self,event):
         gl=self.gridlayer()
@@ -526,7 +530,6 @@ class UmbraEditorTool(QgsMapTool):
         # Pressing 'delete' on mac seems to give 16777219, "^H"
         # that sounds like backspace rather than delete.
 
-        # Might want to add 'm' for merge selected nodes?
         if txt == ' ':
             self.toggle_cell(event)
         elif txt == 'z':
@@ -549,7 +552,7 @@ class UmbraEditorTool(QgsMapTool):
             self.add_quad_from_edge(event,orthogonal='edge')
         elif txt == 'j':
             self.merge_cells(event)
-        elif txt == 't':
+        elif txt in ['t','T']:
             self.triangulate_hole(event)
         elif key == Qt.Key_Delete or key == Qt.Key_Backspace:
             # A little shaky here, but I think the idea is that

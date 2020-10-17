@@ -41,6 +41,7 @@ six.moves.reload_module(unstructured_grid)
 
 # Import the code for the DockWidget
 from .umbra_dockwidget import UmbraDockWidget
+from .grid_info import GridInfo
 
 import os.path
 
@@ -267,6 +268,12 @@ class Umbra(Boiler):
                         parent=self.iface.mainWindow(),
                         add_to_menu=True,
                         add_to_toolbar=False)
+
+        self.add_action(icon_path,text='Grid information',
+                        callback=self.show_grid_info,
+                        parent=self.iface.mainWindow(),
+                        add_to_menu=True,
+                        add_to_toolbar=False)
         
         self.add_action(icon_path,text='Mesh Edit',
                         callback=self.enable_tool,
@@ -469,7 +476,12 @@ class Umbra(Boiler):
         glayer.grid.delete_orphan_nodes()
 
         self.iface.messageBar().pushMessage("Done", "Renumbering is complete", level=Qgis.Success, duration=3)
-
+    def show_grid_info(self):
+        glayer = self.active_gridlayer()
+        if glayer is not None:
+            dialog=GridInfo(self,glayer)
+            dialog.exec_()
+        
     def show_cell_centers(self):
         glayer = self.active_gridlayer()
         if glayer is not None:

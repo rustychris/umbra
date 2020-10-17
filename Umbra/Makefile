@@ -40,7 +40,7 @@ SOURCES = \
 	__init__.py \
 	umbra.py umbra_dockwidget.py umbra_layer.py umbra_editor_tool.py \
 	umbra_openlayer.py umbra_newlayer.py umbra_savelayer.py umbra_common.py \
-	combine_grids.py umbra_triangulate_hole.py	
+	combine_grids.py umbra_triangulate_hole.py grid_info.py
 
 PLUGINNAME = Umbra
 
@@ -48,14 +48,15 @@ PY_FILES = \
 	__init__.py \
 	umbra.py umbra_dockwidget.py umbra_layer.py umbra_editor_tool.py \
 	umbra_openlayer.py umbra_newlayer.py umbra_savelayer.py umbra_common.py \
-	combine_grids.py umbra_triangulate_hole.py
+	combine_grids.py umbra_triangulate_hole.py grid_info.py
 
 UI_FILES = umbra_dockwidget_base.ui \
            umbra_openlayer_base.ui \
            umbra_savelayer_base.ui \
            umbra_newlayer_base.ui \
            combine_grids.ui \
-           umbra_triangulate_hole.ui
+           umbra_triangulate_hole.ui \
+           grid_info.ui
 
 EXTRAS = metadata.txt icon.png sample_data
 

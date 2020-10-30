@@ -46,7 +46,8 @@ from .grid_info import GridInfo
 import os.path
 
 # Import the dialogs:
-from . import (umbra_openlayer, umbra_savelayer, umbra_newlayer, combine_grids)
+from . import (umbra_openlayer, umbra_savelayer, umbra_newlayer, combine_grids,
+               quad_generator)
 
 from . import umbra_layer
 from . import umbra_editor_tool
@@ -275,6 +276,12 @@ class Umbra(Boiler):
                         add_to_menu=True,
                         add_to_toolbar=False)
         
+        self.add_action(icon_path,text='Open quad generation',
+                        callback=self.show_quad_generator,
+                        parent=self.iface.mainWindow(),
+                        add_to_menu=True,
+                        add_to_toolbar=False)
+        
         self.add_action(icon_path,text='Mesh Edit',
                         callback=self.enable_tool,
                         parent=self.iface.mainWindow(),
@@ -481,7 +488,14 @@ class Umbra(Boiler):
         if glayer is not None:
             dialog=GridInfo(self,glayer)
             dialog.exec_()
-        
+
+    quad_generator=None
+    def show_quad_generator(self):
+        if self.quad_generator is None:
+            self.quad_generator=quad_generator.QuadLaplacian(self)
+            # Can I do this without adding it to the iface?
+        self.quad_generator.show()
+
     def show_cell_centers(self):
         glayer = self.active_gridlayer()
         if glayer is not None:

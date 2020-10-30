@@ -488,3 +488,21 @@ The fields are getting written out, but coming back in as empty (at least for no
   may have changed.  Currently when OTF reprojection is active, distances are wrong and
   nothing can be selected.
 - when trying to create a cell but max_side is too small, flash a warning.
+
+
+---
+
+Adding and removing grids:
+
+Given a grid, add it to Umbra:
+        # Add this grid
+        my_layer = umbra_layer.UmbraLayer(umbra=self,
+                                          grid=gA,name="merged")
+        my_layer.register_layers()
+
+(UmbraLayer calls register_grid)
+
+Removing a grid:
+ -- currently, UmbraLayer listens for sublayers getting deleted,
+ -- when all sublayers are deleted => UmbraLayer.unload_layer()
+

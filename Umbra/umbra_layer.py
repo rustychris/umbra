@@ -462,7 +462,7 @@ class UmbraNodeLayer(UmbraSubLayer):
         # takes an existing point memory layer, adds in nodes from g
         feats=[]
         valid=[]
-        #for n in range(self.grid.Nnodes()): # why was I using this???
+
         for n in self.grid.valid_node_iter():
             geom = self.node_geometry(n)
             valid.append(n)
@@ -610,15 +610,19 @@ class UmbraEdgeLayer(UmbraSubLayer):
                 #attrs += [QgsField("c0", QVariant.Int),
                 #          QgsField("c1", QVariant.Int)]
                 #casters += [int,int]
+                
+            if fshape is not None:
+                self.log.warning("Not ready for non-scalar fields (%s: %s)"%(fname,str(ftype)))
+                continue
+                
+            if np.issubdtype(ftype,np.int):
+                attrs.append( QgsField(fname,QVariant.Int) )
+                casters.append(int)
+            elif np.issubdtype(ftype,np.float):
+                attrs.append( QgsField(fname,QVariant.Double) )
+                casters.append(float_or_null)
             else:
-                if np.issubdtype(ftype,np.int):
-                    attrs.append( QgsField(fname,QVariant.Int) )
-                    casters.append(int)
-                elif np.issubdtype(ftype,np.float):
-                    attrs.append( QgsField(fname,QVariant.Double) )
-                    casters.append(float_or_null)
-                else:
-                    self.log.info("Not ready for other datatypes (%s: %s)"%(fname,str(ftype)))
+                self.log.info("Not ready for other datatypes (%s: %s)"%(fname,str(ftype)))
 
         self.attrs=attrs
         self.casters=casters
@@ -1072,6 +1076,9 @@ class UmbraLayer(object):
                 sl.update_title_abstract()
 
     def write_to_project(self,prj,scope,doc,tag):
+        if None in (self.name,self.grid_format,self.path):
+            return False
+        
         # had been scope here, but pretty sure it should be tag.
         if not tag.endswith('/'):
             tag=tag+'/'
@@ -1079,6 +1086,7 @@ class UmbraLayer(object):
         prj.writeEntry(scope,tag+'name',self.name)
         prj.writeEntry(scope,tag+'grid_format',str(self.grid_format))
         prj.writeEntry(scope,tag+'path',str(self.path))
+        return True
 
     @classmethod
     def load_from_project(cls,umbra,prj,scope,tag):
@@ -1086,14 +1094,25 @@ class UmbraLayer(object):
         grid_format,_=prj.readEntry(scope,tag+'grid_format',"")
         path,_=prj.readEntry(scope,tag+'path',"")
 
-        if '' in [name,grid_format,path]:
-            self.log.error("Project file missing requisite data to load an umbra layer")
+        if ( (name=='')
+             or (grid_format in ['',None,'None'])
+             or (path in ['',None,'None']) ):
+            log.error("Project file missing requisite data to load an umbra layer")
             return
 
         log.info('load_from_project: name=%s  grid_format=%s  path=%s'%(name,grid_format,path))
 
         new_layer=cls.open_layer(umbra=umbra,grid_format=grid_format,path=path,name=name)
-        new_layer.register_layers(use_existing=True)
+        if new_layer is not None:
+            # Sometimes a memory-only layer has been kept in a project, but cannot be reloaded.
+            # Just let it go...
+            # TODO: Better solution is to avoid writing these into the project in the first place.
+            new_layer.register_layers(use_existing=True)
+        else:
+            if umbra.iface is not None:
+                msg="Umbra layer could not be loaded from project (may have been memory-only)"
+                umbra.iface.messageBar().pushMessage("Warning", msg, level=Qgis.Warning)
+            
         return new_layer
 
     def connect_grid(self):
@@ -1161,7 +1180,11 @@ class UmbraLayer(object):
     @classmethod
     def open_layer(cls,umbra,grid_format,path,name=None):
         g=cls.load_grid(path=path,grid_format=grid_format)
-        return cls(umbra=umbra,grid=g,path=path,grid_format=grid_format,name=name)
+        if g is None:
+            log.warning("Grid could not be loaded (path=%s  format=%s)"%(path,grid_format))
+            return None
+        else:
+            return cls(umbra=umbra,grid=g,path=path,grid_format=grid_format,name=name)
 
     @classmethod
     def load_grid(cls,grid_format=None,path=None):
@@ -1273,23 +1296,23 @@ class UmbraLayer(object):
         # exists, or to just use the existing group.  
         root=QgsProject.instance().layerTreeRoot()
 
-        if use_existing:
-            group=root.findGroup(self.group_name)
-            if group is None:
-                self.log.warning("Failed to find group '%s', will create it"%self.group_name)
-                use_existing=False
-        else:
-            group=root.findGroup(self.group_name)
-            if group is not None:
-                self.log.warning("use_existing is false, but %s yields %s"%(self.group_name,group))
+        # For now, use_existing just controls what sort of warnings are given, but
+        # the end result doesn't change.
+        group=root.findGroup(self.group_name)
+
+        if use_existing and (group is None):
+            self.log.warning("Failed to find group '%s', will create it"%self.group_name)
+        elif (not use_existing) and (group is not None):
+            self.log.warning("use_existing is False, but %s yields %s"%(self.group_name,group))
+            
+        if group is None:
+            # Create a group for the layers -
+            if order=='top':
+                group=root.insertGroup(0,self.group_name)
             else:
-                # Create a group for the layers -
-                if order=='top':
-                    group=root.insertGroup(0,self.group_name)
-                else:
-                    group=root.addGroup(self.group_name)
-                self.log.info("Created group '%s', value is %s"%
-                              (self.group_name,group))
+                group=root.addGroup(self.group_name)
+            self.log.info("Created group '%s', value is %s"%
+                          (self.group_name,group))
 
         assert root.findGroup(self.group_name) is not None
         
@@ -1614,12 +1637,9 @@ class UmbraLayer(object):
             gnew=triangulate_hole.triangulate_hole(self.grid,seed,**kwargs)
 
             if not kwargs['splice']:
-                UmbraLayer(umbra=self.umbra,grid=gnew,path=None,
-                           grid_format='UGRID', # default. maybe doesn't matter.
-                           name=None)
-                my_layer = UmbraLayer.open_layer(umbra=self.umbra,
-                                                 grid_format='UGRID',# default?
-                                                 path=path)
+                my_layer=UmbraLayer(umbra=self.umbra,grid=gnew,path=None,
+                                    grid_format='UGRID', # default. maybe doesn't matter.
+                                    name=None)
                 my_layer.register_layers()
             
         cmd=GridCommand(self.grid,

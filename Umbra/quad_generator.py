@@ -103,16 +103,16 @@ class QuadLaplacian(base_class, FORM_CLASS):
 
         nom_res=self.nomResSpinBox.value()
         
-        qg=quads.QuadGen(src_layer.grid,
-                         cells=cell_select,
-                         execute=False,
-                         triangle_method='gmsh',
-                         gmsh_path=self.gmshPath.text(),
-                         nom_res=nom_res)
+        sqg=quads.SimpleQuadGen(src_layer.grid,
+                                cells=cell_select,
+                                execute=False,
+                                # triangle_method='gmsh',
+                                gmsh_path=self.gmshPath.text(),
+                                nom_res=nom_res)
         self.add_text("Initialized...")
 
         with LoggingContext(handler=FuncHandler(self.add_text),level=logging.INFO):
-            self.result=qg.execute()
+            self.result=sqg.execute()
             
         self.add_text("Generation complete")
         name="Q[%s]"%(" ".join([str(c) for c in cell_select]))

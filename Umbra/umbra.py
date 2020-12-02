@@ -590,8 +590,12 @@ class Umbra(Boiler):
         self.log.info("scope is %s"%scope)
 
         for i,gl in enumerate(self.gridlayers):
-            gl.write_to_project(prj,scope,doc,"Grid%04d/"%i)
-
+            if not gl.write_to_project(prj,scope,doc,"Grid%04d/"%i):
+                msg="Umbra layer will not be saved in project -- insufficient information"
+                self.iface.messageBar().pushMessage("Layer skipped",
+                                                    msg,
+                                                    level=Qgis.Info, duration=2)
+                
     def on_readProject(self):
         self.log.info("Got a readProject signal")
 
@@ -614,6 +618,7 @@ class Umbra(Boiler):
             tag="Grid%04d/"%i
             self.log.info("on_readProject: reading from tag %s"%tag)
 
+            # NB: gl may come back None
             gl=umbra_layer.UmbraLayer.load_from_project(self,prj,scope,tag)
 
             self.log.info("on_readProject: done with tag %s"%tag)

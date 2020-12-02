@@ -4,6 +4,8 @@ from qgis.PyQt.QtGui import *
 from qgis.PyQt.QtWidgets import QDialog, QAction
 from qgis.PyQt.QtCore import *
 from qgis.gui import QgsMapTool
+import time
+import cProfile,pstats
 
 import logging
 log=logging.getLogger('umbra.editor')
@@ -186,11 +188,16 @@ class UmbraEditorTool(QgsMapTool):
         enabled=self.umbra.current_layer_is_umbra()
 
         self.action_coverage_editor.setEnabled( enabled )
-        if enabled:
-            self.canvas.setMapTool(self)
-        else:
-            # not sure that this does anything:
-            self.canvas.unsetMapTool(self)
+
+        # Used to automatically enable the tool when an umbra layer was
+        # selected, but that gets annoying when trying to use the selection
+        # tool.
+        
+        # if enabled:
+        #     self.canvas.setMapTool(self)
+        # else:
+        #     # not sure that this does anything:
+        #     self.canvas.unsetMapTool(self)
 
     def grid(self):
         return self.umbra.current_grid()
@@ -287,6 +294,8 @@ class UmbraEditorTool(QgsMapTool):
     # What would be good for merging nodes?
     #  could draw an edge, then have a key for merging nodes
     def canvasPressEvent(self, event):
+        t0=time.time()
+        
         super(UmbraEditorTool,self).canvasPressEvent(event)
 
         if event.button()==Qt.LeftButton:
@@ -299,13 +308,24 @@ class UmbraEditorTool(QgsMapTool):
                 self.toggle_cell(event)
         elif (event.button()==Qt.RightButton) and (event.modifiers()==Qt.NoModifier):
             # mostly delete operations
+            # pr=cProfile.Profile()
+            # pr.enable()
             self.delete_edge_or_node(event)
+            # pr.disable()
+
+            # with open('/home/rusty/umbra-profiles.txt','at') as fp:
+            #     stats=pstats.Stats(pr,stream=fp)
+            #     stats.sort_stats('cumulative')
+            #     stats.print_stats()
         else:
             self.log.info("Press event, but not the left button (%s)"%event.button())
             self.log.info(" with modifiers %s"%( int(event.modifiers())) )
             self.clear_op()
 
-        self.log.info("Press event end")
+        elapsed=time.time()-t0
+        self.log.info("Press event end: %.3fs"%elapsed)
+        # right-click delete a node and 3 cells is taking 1.8s.
+        # too long!
 
     def event_to_map_xy(self,event):
         """
@@ -520,6 +540,7 @@ class UmbraEditorTool(QgsMapTool):
         self.log.info("Release event end")
 
     def keyPressEvent(self,event):
+        t0=time.time()
         super(UmbraEditorTool,self).keyPressEvent(event)
         key=event.key()
         txt=event.text()
@@ -564,6 +585,8 @@ class UmbraEditorTool(QgsMapTool):
             else:
                 self.log.info("Ignoring this Delete event")
                 event.ignore()
+        elapsed=time.time() - t0
+        self.log.info("keyPress took %.3fs to process"%elapsed)
 
     def keyReleaseEvent(self,event):
         super(UmbraEditorTool,self).keyReleaseEvent(event)

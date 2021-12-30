@@ -62,12 +62,12 @@ class UmbraSaveLayer(base_class, FORM_CLASS):
 
         for idx,fmt in enumerate(umbra_common.ug_formats):
             if fmt['name']==short_fmt:
-                print("Setting format combo index to %s"%idx)
+                # print("Setting format combo index to %s"%idx)
                 self.formatCombo.setCurrentIndex(idx)
 
         if grid_path is not None:
             self.lineEdit.setText(grid_path)
-            print("Using previous save path %s"%grid_path)
+            # print("Using previous save path %s"%grid_path)
 
         self.browseButton.clicked.connect(self.on_browse)
         self.buttonBox.accepted.connect(self.on_ok_clicked)
@@ -76,13 +76,19 @@ class UmbraSaveLayer(base_class, FORM_CLASS):
     def on_browse(self):
         fmt=self.fmt()
 
+        default_path=self.lineEdit.text()
+        if default_path != "":
+            default_dir=os.path.dirname(default_path)
+        else:
+            default_dir=None
+            
         if fmt['is_dir']:
             path=QtWidgets.QFileDialog.getExistingDirectory(self,'Folder for %s'%fmt['name'],
-                                                            os.environ['HOME'])
+                                                            default_dir)
         else:
             path,_filter=QtWidgets.QFileDialog.getSaveFileName(self, 'Filename for %s'%fmt['name'], 
-                                                               os.environ['HOME'])
-        print("Filename ",path)
+                                                               default_dir)
+        #print("Filename ",path)
         if path is not None:
             self.lineEdit.setText( path )
         return True 

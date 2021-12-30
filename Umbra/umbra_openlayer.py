@@ -29,6 +29,7 @@ default_sun_grid=os.path.join( os.path.dirname(__file__),
 
 from qgis.PyQt import QtGui, uic, QtWidgets
 from qgis.PyQt.QtCore import pyqtSignal #, QMetaObject
+from qgis.core import QgsSettings
 
 FORM_CLASS, base_class = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'umbra_openlayer_base.ui'))
@@ -63,15 +64,22 @@ class UmbraOpenLayer(base_class, FORM_CLASS):
                 self.formatCombo.setCurrentIndex(idx)
             else:
                 print("No match in combo to '%s'"%fmt['long_name'])
-        default=self.umbra.openlayer_state.get('path',default_sun_grid)
 
-        # print "Default path is %s"%default
-        self.lineEdit.setText(default)
+        self.lineEdit.setText(self.default_path())
 
         self.browseButton.clicked.connect(self.on_browse)
         self.buttonBox.accepted.connect(self.on_ok_clicked)
         self.buttonBox.rejected.connect(self.on_cancel_clicked)
 
+    def default_path(self,value=None):
+        s=QgsSettings()
+        if value is None:
+            return s.value("umbra/defaultLayerPath",default_sun_grid)
+        else:
+            s.setValue("umbra/defaultLayerPath",value)
+    def default_directory(self):
+        return os.path.dirname(self.default_path())
+    
     def closeEvent(self, event):
         self.closingPlugin.emit()
         event.accept()
@@ -79,14 +87,16 @@ class UmbraOpenLayer(base_class, FORM_CLASS):
     def on_browse(self):
         fmt=self.fmt()
 
+        def_dir=self.default_directory()
         if fmt['is_dir']:
             path=QtWidgets.QFileDialog.getExistingDirectory(self,'Open %s grid'%fmt['name'],
-                                                            os.environ['HOME'])
+                                                            def_dir)
         else:
             path,_filter=QtWidgets.QFileDialog.getOpenFileName(self, 'Open %s grid'%fmt['name'], 
-                                                       os.environ['HOME'])
+                                                               def_dir)
         if path is not None:
             self.lineEdit.setText( path )
+            self.default_path(value=path)
         return True 
 
     def fmt(self): # should be abstracted to common class

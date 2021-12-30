@@ -1204,6 +1204,8 @@ class UmbraLayer(object):
                 grid=unstructured_grid.UnstructuredGrid.from_ugrid(nc=path)
             elif grid_format=='UnTRIM':
                 grid=unstructured_grid.UnTRIM08Grid(grd_fn=path)
+            elif grid_format=='Delft3D':
+                grid=unstructured_grid.RgfGrid(grd_fn=path)
             elif grid_format=='SHP':
                 grid=unstructured_grid.UnstructuredGrid.from_shp(grd_fn=path)
             else:

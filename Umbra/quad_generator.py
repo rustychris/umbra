@@ -102,13 +102,25 @@ class QuadLaplacian(base_class, FORM_CLASS):
         s.setValue("umbra/gmshPath",self.gmshPath.text())
 
         nom_res=self.nomResSpinBox.value()
-        
-        sqg=quads.SimpleQuadGen(src_layer.grid,
-                                cells=cell_select,
-                                execute=False,
-                                # triangle_method='gmsh',
-                                gmsh_path=self.gmshPath.text(),
-                                nom_res=nom_res)
+        indep_patches=self.independentPatchesCheckBox.isChecked()
+        self.display_text("Independent patches: %s")
+        if indep_patches:
+            self.display_text("Each patch is generated separately")
+            sqg=quads.SimpleQuadGen(src_layer.grid,
+                                    cells=cell_select,
+                                    execute=False,
+                                    # triangle_method='gmsh',
+                                    gmsh_path=self.gmshPath.text(),
+                                    nom_res=nom_res)
+        else:
+            self.display_text("Patches generated simultaneously")
+            sqg=quads.QuadGen(src_layer.grid,
+                              cells=cell_select,
+                              execute=False,
+                              # triangle_method='gmsh',
+                              gmsh_path=self.gmshPath.text(),
+                              nom_res=nom_res)
+            
         self.add_text("Initialized...")
 
         with LoggingContext(handler=FuncHandler(self.add_text),level=logging.INFO):

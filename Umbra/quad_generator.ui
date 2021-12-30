@@ -36,9 +36,9 @@
    <property name="geometry">
     <rect>
      <x>20</x>
-     <y>130</y>
+     <y>150</y>
      <width>341</width>
-     <height>211</height>
+     <height>191</height>
     </rect>
    </property>
    <property name="readOnly">
@@ -119,6 +119,35 @@
    </property>
    <property name="value">
     <double>3.500000000000000</double>
+   </property>
+  </widget>
+  <widget class="QLabel" name="label_4">
+   <property name="geometry">
+    <rect>
+     <x>10</x>
+     <y>110</y>
+     <width>191</width>
+     <height>16</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>Generate independent patches</string>
+   </property>
+  </widget>
+  <widget class="QCheckBox" name="independentPatchesCheckBox">
+   <property name="geometry">
+    <rect>
+     <x>210</x>
+     <y>110</y>
+     <width>80</width>
+     <height>21</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string/>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
    </property>
   </widget>
  </widget>

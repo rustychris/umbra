@@ -5,4 +5,5 @@ ug_formats=[ dict(name='SUNTANS',long_name='SUNTANS {cells,edges,points}.dat',is
              dict(name='SHP',long_name='Shapefile *.shp',is_dir=False),
              dict(name='UnTRIM',long_name='UnTRIM08',is_dir=False),
              dict(name='DFM',long_name='DFlow FM *_net.nc',is_dir=False),
+             dict(name='Delft3D',long_name='Delft3D *.grd',is_dir=False),
              dict(name='pickle',long_name='UnstructuredGrid pickle',is_dir=False) ]

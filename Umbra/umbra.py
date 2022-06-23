@@ -47,7 +47,7 @@ import os.path
 
 # Import the dialogs:
 from . import (umbra_openlayer, umbra_savelayer, umbra_newlayer, combine_grids,
-               quad_generator)
+               quad_generator,umbra_grid_properties)
 
 from . import umbra_layer
 from . import umbra_editor_tool
@@ -246,12 +246,12 @@ class Umbra(Boiler):
                         add_to_menu=True,
                         add_to_toolbar=False)
 
-        # self.add_action(icon_path,text='Delete nodes by polygon',
-        #                 callback=self.delete_nodes_by_polygon,
-        #                 parent=self.iface.mainWindow(),
-        #                 add_to_menu=True,
-        #                 add_to_toolbar=False)
-
+        self.add_action(icon_path,text='Edit grid properties',
+                        callback=self.edit_grid_properties,
+                        parent=self.iface.mainWindow(),
+                        add_to_menu=True,
+                        add_to_toolbar=False)
+        
         self.add_action(icon_path,text="Combine grids",
                         callback=self.show_combine_grids,
                         parent=self.iface.mainWindow(),
@@ -468,6 +468,20 @@ class Umbra(Boiler):
         dialog=umbra_savelayer.UmbraSaveLayer(parent=self.iface.mainWindow(),
                                               iface=self.iface,
                                               umbra=self)
+        dialog.exec_()
+
+    def edit_grid_properties(self):
+        glayer = self.active_gridlayer()
+        if glayer is None:
+            self.iface.messageBar().pushMessage("Select layer!",
+                                                "No umbra layer selected",
+                                                level=Qgis.Info, duration=3)
+            return
+
+        dialog=umbra_grid_properties.UmbraGridProperties(parent=self.iface.mainWindow(),
+                                                         iface=self.iface,
+                                                         layer=glayer,
+                                                         umbra=self)
         dialog.exec_()
 
     def renumber_layer(self):

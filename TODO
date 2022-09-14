@@ -1,6 +1,13 @@
 
 Saving should remember the last format / filename used.
+ this is partially working, but not great. also should help with file extensions.
 
 Need some visual indication of the active key bindings.
 
 Saving to ugrid seems to lose the cells?
+  haven't seen this in a long time.
+
+Add an edge quality option that matches the DFM short links test.
+
+Add a cell quality option that matches janet.
+

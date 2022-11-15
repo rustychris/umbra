@@ -41,7 +41,7 @@ SOURCES = \
 	umbra.py umbra_dockwidget.py umbra_layer.py umbra_editor_tool.py \
 	umbra_openlayer.py umbra_newlayer.py umbra_savelayer.py umbra_common.py \
 	combine_grids.py umbra_triangulate_hole.py grid_info.py \
-	quad_generator.py
+	quad_generator.py umbra_quad_refine.py
 
 PLUGINNAME = Umbra
 
@@ -50,7 +50,7 @@ PY_FILES = \
 	umbra.py umbra_dockwidget.py umbra_layer.py umbra_editor_tool.py \
 	umbra_openlayer.py umbra_newlayer.py umbra_savelayer.py umbra_common.py \
 	combine_grids.py umbra_triangulate_hole.py grid_info.py quad_generator.py \
-	umbra_grid_properties.py
+	umbra_grid_properties.py umbra_quad_refine.py
 
 UI_FILES = umbra_dockwidget_base.ui \
            umbra_openlayer_base.ui \
@@ -60,7 +60,8 @@ UI_FILES = umbra_dockwidget_base.ui \
            umbra_triangulate_hole.ui \
            grid_info.ui \
            quad_generator.ui \
-           umbra_grid_properties.ui
+           umbra_grid_properties.ui \
+           umbra_refine_quads.ui
 
 EXTRAS = metadata.txt icon.png sample_data
 

@@ -22,7 +22,7 @@ from qgis.PyQt.QtCore import QVariant
 import logging
 log=logging.getLogger('umbra.layer')
 
-from stompy.grid import unstructured_grid, orthogonalize
+from stompy.grid import unstructured_grid, orthogonalize, quad_grower
 from stompy.utils import mag
 from stompy.model.delft import dfm_grid
 
@@ -1627,6 +1627,23 @@ class UmbraLayer(object):
                         do_split_edges)
         self.undo_stack.push(cmd)
 
+    def grow_quads_in_hole(self,seed,**kwargs):
+        # make sure it's legal:
+        c=self.grid.select_cells_nearest(seed,inside=True)
+        if c is not None:
+            self.iface.messageBar().pushMessage("Error", "Point is inside an existing cell", level=Qgis.Warning,
+                                                duration=3)
+
+        def do_grow_quads(seed=seed):
+            qg=quad_grower.QuadGrower(grid=self.grid,seed_point=seed)
+            cells=qg.grow()
+
+        cmd=GridCommand(self.grid,
+                        "Grow quads",
+                        do_grow_quads)
+        self.iface.messageBar().pushMessage("Info","Starting quad_grower",level=Qgis.Info)
+        self.undo_stack.push(cmd)
+        
     def triangulate_hole(self,seed,**kwargs):
         # make sure it's legal:
         c=self.grid.select_cells_nearest(seed,inside=True)
@@ -1648,6 +1665,30 @@ class UmbraLayer(object):
                         "Triangulate hole",
                         do_triangulate_hole)
         self.iface.messageBar().pushMessage("Info","Starting triangulate_hole",level=Qgis.Info)
+        self.undo_stack.push(cmd)
+
+    def refine_quads(self,cells,direction='both'):
+        def do_refine_quads():
+            from stompy.grid import quad_refine
+            result=quad_refine.Refiner(self.grid,cells=cells,direction=direction)
+            # result.new_cells is there
+            
+        cmd=GridCommand(self.grid,
+                        "Refine quads",
+                        do_refine_quads)
+        self.iface.messageBar().pushMessage("Info","Refining quads",level=Qgis.Info)
+        self.undo_stack.push(cmd)
+
+    def coarsen_quads(self,cells,direction='both'):
+        def do_coarsen_quads():
+            from stompy.grid import quad_refine
+            result=quad_refine.Coarsener(self.grid,cells=cells,direction=direction)
+            # result.new_cells is there
+            
+        cmd=GridCommand(self.grid,
+                        "Coarsen quads",
+                        do_coarsen_quads)
+        self.iface.messageBar().pushMessage("Info","Coarsening quads",level=Qgis.Info)
         self.undo_stack.push(cmd)
         
     def add_quad_from_edge(self,e,orthogonal='edge'):

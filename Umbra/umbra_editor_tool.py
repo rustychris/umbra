@@ -11,7 +11,7 @@ import logging
 log=logging.getLogger('umbra.editor')
 
 # Copied / boilerplated from cadtools/singlesegmentfindertoolpy
-from . import (umbra_layer, umbra_triangulate_hole)
+from . import (umbra_layer, umbra_triangulate_hole, umbra_quad_refine)
 
 import numpy as np
 import traceback
@@ -404,6 +404,33 @@ class UmbraEditorTool(QgsMapTool):
                                                            iface=self.iface,
                                                            layer=gl,seed_point=map_xy)
         dialog.exec_()
+
+    def refine_quads(self,event):
+        gl=self.gridlayer()
+        if gl is None:
+            self.log.info('refine_quads: no gridlayer found')
+            return
+
+        l=self.gridlayer().layer_by_tag('cells')
+        cells=[]
+        if l is not None:
+            cells=l.selection()
+        
+        if len(cells)==0:
+            self.log.info("No cells selected")
+        else:
+            dialog=umbra_quad_refine.UmbraQuadRefine(parent=self.iface.mainWindow(),
+                                                     iface=self.iface,
+                                                     layer=gl,cells=cells)
+            dialog.exec_()
+        
+    def grow_quads(self,event):
+        gl=self.gridlayer()
+        if gl is None:
+            self.log.info('Triangulate_hole: no gridlayer found')
+            return
+        map_xy,pix_xy=self.event_to_map_xy(event)
+        gl.grow_quads_in_hole(seed=map_xy)
             
     def optimize_local(self,event):
         gl=self.gridlayer()
@@ -575,6 +602,10 @@ class UmbraEditorTool(QgsMapTool):
             self.merge_cells(event)
         elif txt in ['t','T']:
             self.triangulate_hole(event)
+        elif txt in ['g']:
+            self.grow_quads(event)
+        elif txt in ['G']:
+            self.refine_quads(event)
         elif key == Qt.Key_Delete or key == Qt.Key_Backspace:
             # A little shaky here, but I think the idea is that
             # we accept it if we handle it, which is good b/c

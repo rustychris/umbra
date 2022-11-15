@@ -5,3 +5,14 @@ There is a sneaky bug where seemingly random cells get deleted.
 
 When a layer fails to load, it seems to break the loading of Umbra
 itself.
+
+##
+
+UI:
+ - looks like when scale is used on shared edges it actually edits the original
+   grid, replacing positive scales with negative scales. can be confusing.
+   
+
+quad generator / quad laplacian:
+ - extra edges in the generator grid will confuse it, even if they are deleted.
+   should at least renumber before attempting.

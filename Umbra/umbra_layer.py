@@ -91,7 +91,16 @@ def update_node_degree(grid,nodes=None,with_callback=True):
 lonely_edge_quality=1.0
 
 # Test both for center spacing, and for center-edge spacing
-one_sided_test=True
+# The DFM test for short links compares cell-cell spacing against
+#   dxlim  = 0.9d0*removesmalllinkstrsh*0.5d0*(sqrt(ba(n1)) + sqrt(ba(n2)))
+#   i.e. average of square root of cell areas
+# I think that threshold defaults to 0.1
+# The existing edge quality code sums the areas and then takes square root.
+# sqrt(A1+A2) vs 0.5*(sqrt(A1)+sqrt(A2))
+# bad if (dxlink < dxlim)
+
+# Would be nice for this to be adjustable through UI.
+one_sided_test=False
 
 def update_edge_quality(g,edges=None,with_callback=True):
     # First part is calculating the values
@@ -147,9 +156,15 @@ def update_edge_quality(g,edges=None,with_callback=True):
         c2c[~external]=np.minimum(c2cl,c2cr)
 
     cell_select=g.edges['cells'][int_edges,:]
-    Acc=g.cells_area(cell_select).sum(axis=1)
-
-    c2c[~external] /= np.sqrt(Acc) # normalized - should be 1.0 for square grid.
+    if 1:
+        # Matches DFM criterion
+        Lcc=np.sqrt( g.cells_area(cell_select) ).mean(axis=1)
+    else:
+        # normalized - should be 1.0 for square grid.
+        Acc=g.cells_area(cell_select).sum(axis=1)
+        Lcc=np.sqrt(Acc)
+        
+    c2c[~external] /= Lcc
     # used to set inf on borders, but that means auto-scaling color limits
     # don't work.
     c2c[ external ] = lonely_edge_quality
@@ -178,7 +193,7 @@ class UmbraSubLayer(object):
         """
         self.parent=parent
         self.log=parent.log
-        self.grid=parent.grid
+        self.grid=self.grid_for_display()
         self.tag=tag
         self.extend_grid()
         self.crs=parent.crs
@@ -199,6 +214,14 @@ class UmbraSubLayer(object):
         self.populate_qlayer()
         # connect signals to see if attributes are modified
         self.connect_qlayer()
+
+    def grid_for_display(self):
+        """
+        Some layers might have a derived grid that is used for display.
+        e.g. live Delaunay triangulation, perhaps sub-edge geometry, or
+        Bezier curves. By default just the parent grid.
+        """
+        return self.parent.grid
 
     # This is a somewhat extreme version --
     def freeze(self):
@@ -725,11 +748,13 @@ class UmbraEdgeLayer(UmbraSubLayer):
 
         self.grid.edges['feat_id'][j] = outFeats[0].id()
         self.qlayer.triggerRepaint()
-        self.log.info("Just added an edge - %s"%geom.asWkt())
+        self.log.info("%s: Just added an edge - %s"%(self,geom.asWkt()))
 
     def on_delete_edge(self,g,func_name,j,**k):
         self.qlayer.dataProvider().deleteFeatures([self.grid.edges['feat_id'][j]])
         self.qlayer.triggerRepaint()
+        self.log.info("%s: Just deleted an edge"%self)
+        
     def on_modify_node(self,g,func_name,n,**k):
         if 'x' not in k:
             return
@@ -746,6 +771,23 @@ class UmbraEdgeLayer(UmbraSubLayer):
         self.qlayer.triggerRepaint()
 
     def on_modify_edge(self,g,func_name,j,**k):
+        dirty=False
+        
+        self.log.info("%s: top of on_modify_edge args=%s"%(self,str(k)))
+
+        if 'nodes' in k:
+            # note that g is *already* updated, so at this point it's hard to tell whether
+            # nodes are really changing, or just set to the value they were before.
+            # update edge geometry
+            edge_geom_changes={}
+
+            geom=self.edge_geometry(j)
+            fid=self.grid.edges[j]['feat_id']
+            edge_geom_changes={fid:geom}
+            self.qlayer.dataProvider().changeGeometryValues(edge_geom_changes)
+            dirty=True
+
+        # Attribute changes:
         fid=g.edges['feat_id'][j]
         attr_changes={fid:{}}
 
@@ -753,14 +795,16 @@ class UmbraEdgeLayer(UmbraSubLayer):
             name=attr.name()
             if name in k:
                 attr_changes[fid][idx]=self.casters[idx](k[name])
-        if not attr_changes[fid]:
-            return
+        if attr_changes[fid]:
+            self.log.info("%s: on_modify_edge found attr changes"%self)
+            provider=self.qlayer.dataProvider()
+            provider.changeAttributeValues(attr_changes)
+            dirty=True
 
-        provider=self.qlayer.dataProvider()
-        provider.changeAttributeValues(attr_changes)
-
-        self.qlayer.triggerRepaint()
-
+        if dirty:
+            self.qlayer.triggerRepaint()
+            self.log.info("%s: Just modified an edge and triggered repaint"%self)
+        
     def edge_geometry(self,j):
         seg=self.grid.nodes['x'][self.grid.edges['nodes'][j]]
         if np.any(np.isnan(seg)):
@@ -994,6 +1038,46 @@ class UmbraCellLayer(UmbraSubLayer):
                 selected.append(c)
         return selected
 
+class UmbraDelaunayLayer(UmbraEdgeLayer):
+    """
+    Display live-updated edges of the Delaunay triangulation of
+    the layer.
+    """
+
+    # seems like just inserting a node is not updating correctly
+    # restore_delaunay() does get called, and some edges get flipped.
+    # but "ShadowCDT - INFO - Flipping edge 0, with cells 0, 10   nodes 8,5"
+    # is not followed by a modify_edge messages on the umbra side.
+    
+    def grid_for_display(self):
+        """
+        Insert the live DT
+        """
+        from stompy.grid import shadow_cdt
+        return shadow_cdt.ShadowCDT(self.parent.grid)
+
+    def unextend_grid(self):
+        super().unextend_grid()
+        self.grid.disconnect() # disconnect from self.parent.grid
+    
+    feat_id_name='delny_feat_id'
+    def create_qlayer(self,existing=None):
+        if existing:
+            qlayer=existing
+        else:
+            qlayer=QgsVectorLayer("LineString"+self.crs,self.prefix+"-delaunay","memory")
+
+        self.attrs=[]
+        self.casters=[]
+
+        if not existing:
+            # clean, thin magenta style
+            symbol = QgsLineSymbol.createSimple({'line_style':'solid',
+                                                 'line_width':'0.2',
+                                                 'line_width_unit':'MM',
+                                                 'line_color': 'magenta'})
+            qlayer.renderer().setSymbol(symbol)
+        return qlayer
 
 class UmbraCellCenterLayer(UmbraCellLayer):
     """
@@ -1068,12 +1152,19 @@ class UmbraLayer(object):
         Called after saving the grid to a new file, to update the layer's information
         for future saves.
         """
+        # Careful to set project dirty if these change. Otherwise saving the project
+        # might be a nop as it thinks nothing has changed.
+        dirty=False
         if 'grid_format' in kws:
+            dirty = dirty | (self.grid_format != kws['grid_format'])
             self.grid_format=kws['grid_format']
         if 'path' in kws:
+            dirty = dirty | (self.path != kws['path'])
             self.path=kws['path']
             for sl in self.layers:
                 sl.update_title_abstract()
+        if dirty:
+            prj=QgsProject.instance().setDirty()
 
     def write_to_project(self,prj,scope,doc,tag):
         if None in (self.name,self.grid_format,self.path):
@@ -1207,7 +1298,7 @@ class UmbraLayer(object):
             elif grid_format=='Delft3D':
                 grid=unstructured_grid.RgfGrid(grd_fn=path)
             elif grid_format=='SHP':
-                grid=unstructured_grid.UnstructuredGrid.from_shp(grd_fn=path)
+                grid=unstructured_grid.UnstructuredGrid.from_shp(shp_fn=path)
             else:
                 raise Exception("Need to add other grid types, like %s!"%grid_format)
         return grid
@@ -1337,7 +1428,8 @@ class UmbraLayer(object):
     tag_map=dict(cells=UmbraCellLayer,
                  edges=UmbraEdgeLayer,
                  nodes=UmbraNodeLayer,
-                 centers=UmbraCellCenterLayer)
+                 centers=UmbraCellCenterLayer,
+                 delaunay=UmbraDelaunayLayer)
 
     def register_layers(self,use_existing=False,order='top'):
         """
@@ -1395,9 +1487,6 @@ class UmbraLayer(object):
         self.register_layer( cls(self,
                                  prefix=self.name,
                                  tag=tag) )
-
-    def add_centers_layer(self):
-        self.add_layer_by_tag('centers')
 
     def set_edge_quality_style(self):
         sl = self.layer_by_tag('edges')
@@ -1564,6 +1653,10 @@ class UmbraLayer(object):
         self.undo_stack.push(cmd)
         
     def add_edge(self,nodes):
+        if nodes[0]==nodes[1]:
+            self.log.info("Ignoring edge with duplicate nodes (nodes=%s)"%str(nodes))
+            return
+            
         if self.grid.nodes_to_edge(*nodes) is not None:
             self.log.info("Edge already existed (nodes=%s), probably"%str(nodes))
             return
@@ -1604,15 +1697,16 @@ class UmbraLayer(object):
 
         self.undo_stack.push(cmd)
 
-    def split_edge(self,e,merge_thresh=-1):
+    def split_edge(self,e,split_cells=True,merge_thresh=-1,x=None):
         """
         e: list of edge indices
         merge_thresh: threshold for merging tri=>quad after split
+        split_cells: whether to use the new node to split the cell
         """
         def do_split_edges(e=e):
             all_js_next=[]
             for j in e:
-                j_new,n_new,js_next=self.grid.split_edge(j,merge_thresh=merge_thresh)
+                j_new,n_new,js_next=self.grid.split_edge(j,split_cells=split_cells,merge_thresh=merge_thresh,x=x)
                 # update the edge selection to be the next obvious edge
                 all_js_next += list(js_next)
                 

@@ -36,9 +36,9 @@
    <property name="geometry">
     <rect>
      <x>20</x>
-     <y>150</y>
+     <y>190</y>
      <width>341</width>
-     <height>191</height>
+     <height>151</height>
     </rect>
    </property>
    <property name="readOnly">
@@ -121,30 +121,33 @@
     <double>3.500000000000000</double>
    </property>
   </widget>
-  <widget class="QLabel" name="label_4">
+  <widget class="QCheckBox" name="independentPatchesCheckBox">
    <property name="geometry">
     <rect>
-     <x>10</x>
+     <x>39</x>
      <y>110</y>
-     <width>191</width>
-     <height>16</height>
+     <width>251</width>
+     <height>21</height>
     </rect>
    </property>
    <property name="text">
     <string>Generate independent patches</string>
    </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
   </widget>
-  <widget class="QCheckBox" name="independentPatchesCheckBox">
+  <widget class="QCheckBox" name="nudgingCheckBox">
    <property name="geometry">
     <rect>
-     <x>210</x>
-     <y>110</y>
-     <width>80</width>
+     <x>40</x>
+     <y>140</y>
+     <width>181</width>
      <height>21</height>
     </rect>
    </property>
    <property name="text">
-    <string/>
+    <string>Nudge to internal lines</string>
    </property>
    <property name="checked">
     <bool>true</bool>

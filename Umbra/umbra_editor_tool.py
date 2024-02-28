@@ -318,14 +318,15 @@ class UmbraEditorTool(QgsMapTool):
             #     stats.sort_stats('cumulative')
             #     stats.print_stats()
         else:
-            self.log.info("Press event, but not the left button (%s)"%event.button())
-            self.log.info(" with modifiers %s"%( int(event.modifiers())) )
+            self.log.debug("Press event, but not the left button (%s)"%event.button())
+            self.log.debug(" with modifiers %s"%( int(event.modifiers())) )
             self.clear_op()
 
         elapsed=time.time()-t0
-        self.log.info("Press event end: %.3fs"%elapsed)
-        # right-click delete a node and 3 cells is taking 1.8s.
-        # too long!
+        if elapsed>0.100:
+            self.log.info("Press event end: %.3fs"%elapsed)
+        else:
+            self.log.debug("Press event end: %.3fs"%elapsed)
 
     def event_to_map_xy(self,event):
         """
@@ -358,14 +359,18 @@ class UmbraEditorTool(QgsMapTool):
         else:
             self.log.info("no feature hits")
 
-    def split_edge(self,event):
+    def split_edge(self,event,split_cells=True):
         gl=self.gridlayer()
         if gl is None:
             return
         items=self.event_to_item(event,types=['edge'],multiple=True)
         if len(items['edge']) > 0:
             merge_thresh=self.umbra.dockwidget.automerge_thresh.value()
-            gl.split_edge(e=items['edge'],merge_thresh=merge_thresh)
+            if split_cells:
+                x=None
+            else:
+                x=items['map_xy']
+            gl.split_edge(e=items['edge'],split_cells=split_cells,merge_thresh=merge_thresh,x=x)
             self.clear_op() # safety first
         else:
             self.log.info("no feature hits")
@@ -592,6 +597,8 @@ class UmbraEditorTool(QgsMapTool):
             self.merge_nodes_of_edge(event)
         elif txt in ['s','S']: # in qgis 3, s is for snap.
             self.split_edge(event)
+        elif txt=='i': # insert node into edge
+            self.split_edge(event,split_cells=False)
         elif txt in ['Q']:
             # this one forces the new quad to be orthogonal
             self.add_quad_from_edge(event,orthogonal='cell')

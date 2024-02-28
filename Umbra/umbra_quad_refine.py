@@ -37,7 +37,7 @@ import logging
 log=logging.getLogger('umbra.quad_refine')
 
 class UmbraQuadRefine(base_class, FORM_CLASS):
-    directions={'Both direction':'both',
+    directions={'Both directions':'both',
                 'Along long axis':'long',
                 'Along short axis':'lat'}
 

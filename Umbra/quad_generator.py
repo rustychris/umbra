@@ -104,12 +104,14 @@ class QuadLaplacian(base_class, FORM_CLASS):
         nom_res=self.nomResSpinBox.value()
         indep_patches=self.independentPatchesCheckBox.isChecked()
         self.display_text("Independent patches: %s")
+        nudging=(not indep_patches) and self.nudgingCheckBox.isChecked()
+        
         if indep_patches:
             self.display_text("Each patch is generated separately")
             sqg=quads.SimpleQuadGen(src_layer.grid,
                                     cells=cell_select,
                                     execute=False,
-                                    # triangle_method='gmsh',
+                                    triangle_method='gmsh', # had been commented out. why?
                                     gmsh_path=self.gmshPath.text(),
                                     nom_res=nom_res)
         else:
@@ -117,7 +119,7 @@ class QuadLaplacian(base_class, FORM_CLASS):
             sqg=quads.QuadGen(src_layer.grid,
                               cells=cell_select,
                               execute=False,
-                              # triangle_method='gmsh',
+                              triangle_method='gmsh', # why did I comment this out? Rebay is buggy
                               gmsh_path=self.gmshPath.text(),
                               nom_res=nom_res)
             
@@ -125,6 +127,8 @@ class QuadLaplacian(base_class, FORM_CLASS):
 
         with LoggingContext(handler=FuncHandler(self.add_text),level=logging.INFO):
             self.result=sqg.execute()
+            if nudging:
+                sqg.nudge_to_internal() # modified sqg.g_final in place.
             
         self.add_text("Generation complete")
         name="Q[%s]"%(" ".join([str(c) for c in cell_select]))

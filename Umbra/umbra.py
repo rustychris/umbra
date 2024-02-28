@@ -264,6 +264,12 @@ class Umbra(Boiler):
                         add_to_menu=True,
                         add_to_toolbar=False)
 
+        self.add_action(icon_path,text='Show Delaunay',
+                        callback=self.show_delaunay,
+                        parent=self.iface.mainWindow(),
+                        add_to_menu=True,
+                        add_to_toolbar=False)
+        
         self.add_action(icon_path,text='Show Umbra panel',
                         callback=self.dockwidget_show,
                         parent=self.iface.mainWindow(),
@@ -513,8 +519,13 @@ class Umbra(Boiler):
     def show_cell_centers(self):
         glayer = self.active_gridlayer()
         if glayer is not None:
-            glayer.add_centers_layer()
+            glayer.add_layer_by_tag('centers')
 
+    def show_delaunay(self):
+        glayer = self.active_gridlayer()
+        if glayer is not None:
+            glayer.add_layer_by_tag('delaunay')
+            
     def set_cell_quality_style(self):
         glayer = self.active_gridlayer()
         if glayer is not None:
@@ -538,11 +549,17 @@ class Umbra(Boiler):
         glayer = self.active_gridlayer()
         if glayer is not None:
             glayer.add_layer_by_tag(tag='cells')
+            
     def add_centers_layer(self):
         glayer = self.active_gridlayer()
         if glayer is not None:
             glayer.add_layer_by_tag(tag='centers')
 
+    def add_delaunay_layer(self):
+        glayer = self.active_gridlayer()
+        if glayer is not None:
+            glayer.add_layer_by_tag(tag='delaunay')
+            
     def merge_grids(self):
         selected=self.active_gridlayer(multiple=True)
         if len(selected)<2:

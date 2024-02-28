@@ -24,7 +24,7 @@
 import os
 import logging
 
-log=logging.getLogger('umbra')
+log=logging.getLogger() # ('umbra')
 log.setLevel(logging.DEBUG)
 fmter=logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 if 0: # stream output

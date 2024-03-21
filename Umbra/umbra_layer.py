@@ -1075,7 +1075,7 @@ class UmbraDelaunayLayer(UmbraEdgeLayer):
             symbol = QgsLineSymbol.createSimple({'line_style':'solid',
                                                  'line_width':'0.2',
                                                  'line_width_unit':'MM',
-                                                 'line_color': 'magenta'})
+                                                 'line_color': 'lightgray'}) # 'magenta'
             qlayer.renderer().setSymbol(symbol)
         return qlayer
 
@@ -1547,6 +1547,7 @@ class UmbraLayer(object):
         return QgsRectangle(xmin,ymin,xmax,ymax)
       
     def renumber(self):
+        self.grid.merge_duplicate_nodes()
         self.grid.renumber(reorient_edges=False)
         # Also recalculate edge->cells and similar
         self.grid.edge_to_cells(recalc=True)

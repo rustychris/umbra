@@ -35,6 +35,16 @@ If elements of the mesh are selected, some operations will affect the selected e
 an element nearest the mouse. To select elements choose the specific mesh layer (cells/edges/nodes) in 
 the layer pane, and use standard Qgis tools to select features.
 
+## Load and Save
+Loading and saving are access from the Plugins..Umbra menu. Grids can be loaded from untrim format, suntans, ugrid, DFM, and stompy-specific pickle.
+
+Qgis is unaware of the saved/unsaved state of grids. Save early and save often. 
+
 ## Generating Quads
 
-Quad regions are generated from a "conceptual mesh" 
+Quad regions are generated from a "conceptual mesh" which is just another umbra mesh with some extra information on edges.
+
+1. Create a new mesh, choosing a large value like 1000 for max number of sides.
+2. Open the attribute table for edges and add a field "scale" with decimal type.
+3. Draw a rectangular-ish region (shift-clicks). The 4 smallest internal angles will be used as the corners of the quad patch. Bezier curves will smoothly connect nodes and ensure that corners are locally 90° angles.
+4. 

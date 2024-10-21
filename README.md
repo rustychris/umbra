@@ -21,7 +21,7 @@ map window.
 * 'R' nudges the neighborhood towards a regular curvilinear mesh. When the neighborhood is not topologically a curvilinear mesh this may fail
 * 'z' undoes the last operation. For bulk operations this may only undo the individual operations (if you smooth 1000 nodes, 'z' might only undo the last move). 'z' can be applied repeatedly.
 * 'Z' will redo the last operation that was undone.
-* 'm' merge nodes of an ede
+* 'm' merge nodes of an edge (broken)
 * 's' or 'S' split an edge into two edges, splitting cells
 * 'i' insert a node into an edge, no splitting cells
 * 'Q' at an inside corner, add an orthogonal quad
@@ -36,3 +36,5 @@ an element nearest the mouse. To select elements choose the specific mesh layer 
 the layer pane, and use standard Qgis tools to select features.
 
 ## Generating Quads
+
+Quad regions are generated from a "conceptual mesh" 
